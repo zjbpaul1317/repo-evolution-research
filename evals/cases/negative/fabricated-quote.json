@@ -1,0 +1,6 @@
+{
+  "id": "fabricated-quote",
+  "mutation": "fabricated_quote",
+  "check": "validation_error",
+  "expected_code": "integrity:quote_mismatch"
+}

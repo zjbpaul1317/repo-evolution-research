@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repo-evolution-research.local/schemas/pack_index.schema.json",
+  "title": "Reading pack index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "rule_version",
+    "observed_at",
+    "repository",
+    "budget",
+    "packs",
+    "omitted_candidates",
+    "counts",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.3" },
+    "rule_version": { "const": "packs-v1" },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "repository": { "$ref": "#/$defs/repository" },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_pack_chars", "used_chars", "remaining_chars"],
+      "properties": {
+        "max_pack_chars": { "type": "integer", "minimum": 0 },
+        "used_chars": { "type": "integer", "minimum": 0 },
+        "remaining_chars": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "packs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/pack" }
+    },
+    "omitted_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "entity_id", "reason"],
+        "properties": {
+          "candidate_id": { "type": "string", "minLength": 1 },
+          "entity_id": { "type": "string", "minLength": 1 },
+          "reason": {
+            "enum": ["pack_char_budget", "selected_hard_budget"]
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "owner", "name"],
+      "properties": {
+        "host": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "pack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pack_id",
+        "path",
+        "source_kind",
+        "module",
+        "candidate_ids",
+        "chars",
+        "items",
+        "truncated",
+        "truncation_reasons",
+        "omitted_candidate_ids"
+      ],
+      "properties": {
+        "pack_id": {
+          "type": "string",
+          "pattern": "^pack-[0-9a-f]{16}$"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^analysis/packs/part-[0-9]{3}\\.md$"
+        },
+        "source_kind": { "type": "string", "minLength": 1 },
+        "module": { "type": "string", "minLength": 1 },
+        "candidate_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "chars": { "type": "integer", "minimum": 0 },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/item" }
+        },
+        "truncated": { "type": "boolean" },
+        "truncation_reasons": {
+          "type": "array",
+          "items": {
+            "enum": ["preview_truncated", "pack_char_budget"]
+          },
+          "uniqueItems": true
+        },
+        "omitted_candidate_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id",
+        "entity_id",
+        "kind",
+        "title",
+        "bucket",
+        "module",
+        "tier",
+        "deep_read",
+        "score",
+        "score_components",
+        "selection_reason",
+        "missing_features",
+        "raw_refs",
+        "evidence_ids",
+        "agent_selected",
+        "recommended",
+        "budget_fit",
+        "preview",
+        "evidence_previews",
+        "full_content_refs"
+      ],
+      "properties": {
+        "candidate_id": { "type": "string", "minLength": 1 },
+        "entity_id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "bucket": { "type": "string", "minLength": 1 },
+        "module": { "type": "string", "minLength": 1 },
+        "tier": { "enum": ["research", "discovery"] },
+        "deep_read": { "type": "boolean" },
+        "score": { "type": "integer" },
+        "score_components": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "selection_reason": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "missing_features": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "raw_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/raw_ref" }
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "agent_selected": { "type": "boolean" },
+        "recommended": { "type": "boolean" },
+        "budget_fit": {
+          "enum": [
+            "fetchable",
+            "deep_read",
+            "recorded",
+            "blocked_pr_budget",
+            "blocked_entity_budget"
+          ]
+        },
+        "preview": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["chars", "original_chars", "truncated"],
+          "properties": {
+            "chars": { "type": "integer", "minimum": 0 },
+            "original_chars": { "type": "integer", "minimum": 0 },
+            "truncated": { "type": "boolean" }
+          }
+        },
+        "evidence_previews": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence_preview" }
+        },
+        "full_content_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/raw_ref" }
+        }
+      }
+    },
+    "evidence_preview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "source_kind",
+        "source_url",
+        "locator",
+        "text",
+        "chars",
+        "original_chars",
+        "truncated"
+      ],
+      "properties": {
+        "evidence_id": { "type": "string", "minLength": 1 },
+        "source_kind": { "type": "string", "minLength": 1 },
+        "source_url": { "type": "string" },
+        "locator": { "type": "object" },
+        "text": { "type": "string" },
+        "chars": { "type": "integer", "minimum": 0 },
+        "original_chars": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "raw_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "json_pointer"],
+      "properties": {
+        "artifact": { "type": "string", "minLength": 1 },
+        "json_pointer": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

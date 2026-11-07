@@ -1,0 +1,6 @@
+{
+  "id": "mentions-as-implementation",
+  "mutation": "mentions_as_implementation",
+  "check": "validation_error",
+  "expected_code": "merged_state_conflict"
+}

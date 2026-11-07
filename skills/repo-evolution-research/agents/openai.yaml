@@ -1,0 +1,6 @@
+interface:
+  display_name: "Repository Evolution Research"
+  short_description: "研究开源仓库近期技术演进，产出可核查的中文证据报告"
+  default_prompt: "Use $repo-evolution-research to explain how vllm-project/vllm evolved in the last 90 days."
+policy:
+  allow_implicit_invocation: true

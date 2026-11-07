@@ -1,0 +1,6 @@
+{
+  "id": "stale-validation",
+  "mutation": "stale_validation",
+  "check": "integrity_problem",
+  "expected_code": "stale_validation"
+}

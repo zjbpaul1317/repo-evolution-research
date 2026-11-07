@@ -1,0 +1,423 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repo-evolution-research.local/schemas/source_profile.schema.json",
+  "title": "Repository discovery source profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "repository",
+    "discovery",
+    "observed_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "enum": ["1.2", "1.3"]
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "repository": {
+      "$ref": "#/$defs/repository"
+    },
+    "discovery": {
+      "$ref": "#/$defs/discovery"
+    }
+  },
+  "$defs": {
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "node_id",
+        "owner",
+        "name",
+        "full_name",
+        "url",
+        "description",
+        "homepage",
+        "topics",
+        "default_branch",
+        "default_branch_sha",
+        "archived",
+        "language",
+        "created_at",
+        "updated_at",
+        "pushed_at"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "node_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "full_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "homepage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "topics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "default_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "default_branch_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "archived": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "pushed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "truncation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total",
+        "returned",
+        "limit",
+        "truncated"
+      ],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "discussions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "enabled",
+        "total_count",
+        "categories",
+        "categories_truncated",
+        "errors",
+        "capability_status",
+        "items_status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable",
+            "not_applicable",
+            "not_requested"
+          ]
+        },
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "total_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "categories_truncated": {
+          "type": "boolean"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "capability_status": {
+          "type": "string"
+        },
+        "items_status": {
+          "type": "string"
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "status"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "read",
+            "not_found",
+            "unavailable",
+            "too_large",
+            "unsupported",
+            "unsupported_encoding",
+            "decode_error"
+          ]
+        },
+        "size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "chars": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "blob_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "discovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tree_truncated",
+        "tree_total_entries",
+        "rfc_paths",
+        "design_paths",
+        "docs_paths",
+        "roadmap_files",
+        "architecture_files",
+        "contributing_files",
+        "changelog_files",
+        "issue_templates",
+        "pull_request_templates",
+        "module_roots",
+        "truncations",
+        "labels",
+        "labels_truncated",
+        "discussions",
+        "deferred",
+        "files"
+      ],
+      "properties": {
+        "tree_truncated": {
+          "type": "boolean"
+        },
+        "tree_total_entries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rfc_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "design_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "docs_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "roadmap_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "architecture_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contributing_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "changelog_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "issue_templates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pull_request_templates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "module_roots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "truncations": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/truncation"
+          }
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "labels_truncated": {
+          "type": "boolean"
+        },
+        "discussions": {
+          "$ref": "#/$defs/discussions"
+        },
+        "deferred": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          }
+        }
+      }
+    }
+  }
+}

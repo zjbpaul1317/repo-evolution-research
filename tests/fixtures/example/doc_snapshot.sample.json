@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.3",
+  "observed_at": "2026-10-01T00:00:00Z",
+  "repository": {
+    "host": "github.com",
+    "owner": "acme",
+    "name": "demo"
+  },
+  "path": "docs/design.md",
+  "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "url": "https://github.com/acme/demo/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/docs/design.md",
+  "status": "read",
+  "size": 11,
+  "chars": 11,
+  "text": {
+    "preview": "hello world",
+    "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "bytes": 11,
+    "preview_truncated": false
+  },
+  "blob_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "git_blob_sha": "cccccccccccccccccccccccccccccccccccccccc",
+  "limitations": [
+    "observed_current_state"
+  ]
+}

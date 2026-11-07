@@ -1,0 +1,22 @@
+name: Feature request / 功能建议
+description: Propose a use case, source, or workflow improvement.
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case / 使用场景
+      description: What research question or workflow is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior / 期望行为
+      description: Include sources, expected outputs, alternatives and limitations when applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation / 如何验收
+      description: What observable result would establish that the improvement works?

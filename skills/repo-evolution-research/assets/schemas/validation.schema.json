@@ -1,0 +1,379 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repo-evolution-research.local/schemas/validation.schema.json",
+  "title": "Research validation report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "ok",
+    "research_path",
+    "research_sha256",
+    "ledger_sha256",
+    "counts",
+    "checks",
+    "errors",
+    "warnings",
+    "lifecycle"
+  ],
+  "properties": {
+    "schema_version": {
+      "enum": ["1.2", "1.3"]
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$",
+      "not": {
+        "pattern": "[\\r\\n]"
+      }
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "research_path": {
+      "const": "analysis/research.json"
+    },
+    "research_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ledger_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topics",
+        "claims",
+        "capabilities",
+        "unknowns",
+        "reading_items",
+        "lifecycle",
+        "errors",
+        "warnings"
+      ],
+      "properties": {
+        "topics": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "claims": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capabilities": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknowns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reading_items": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lifecycle": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warnings": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/problem"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/problem"
+      }
+    },
+    "lifecycle": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/lifecycle"
+      }
+    }
+  },
+  "$defs": {
+    "problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "path",
+        "topic_id",
+        "claim_id",
+        "capability_id",
+        "evidence_id",
+        "entity_id"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "topic_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "claim_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capability_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "entity_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "detail"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "skipped"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "declared_states": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proposal_state",
+        "implementation_state",
+        "delivery_state",
+        "availability"
+      ],
+      "properties": {
+        "proposal_state": {
+          "type": "string"
+        },
+        "implementation_state": {
+          "type": "string"
+        },
+        "delivery_state": {
+          "type": "string"
+        },
+        "availability": {
+          "type": "string"
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_id",
+        "declared",
+        "derived",
+        "delivery_verification",
+        "state_time_basis",
+        "observed_revision",
+        "verified_versions",
+        "supporting_entities",
+        "gaps",
+        "conflicts"
+      ],
+      "properties": {
+        "capability_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "declared": {
+          "$ref": "#/$defs/declared_states"
+        },
+        "derived": {
+          "$ref": "#/$defs/declared_states"
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "declared",
+              "derived",
+              "message"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "declared": {
+                "type": "string"
+              },
+              "derived": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "delivery_verification": {
+          "enum": [
+            "verified",
+            "note_only",
+            "unknown",
+            "absent_at_verified_revision"
+          ]
+        },
+        "state_time_basis": {
+          "enum": [
+            "observed_current",
+            "historical_reconstructed"
+          ]
+        },
+        "observed_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verified_versions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "supporting_entities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "proposal",
+            "pull_request",
+            "commit",
+            "release",
+            "document",
+            "other"
+          ],
+          "properties": {
+            "proposal": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "pull_request": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "commit": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "release": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "document": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "other": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

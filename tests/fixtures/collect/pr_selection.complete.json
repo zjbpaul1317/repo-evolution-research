@@ -1,0 +1,58 @@
+{
+  "activity_window": {
+    "end": "2026-11-01T00:00:00Z",
+    "start": "2026-08-01T00:00:00Z",
+    "timezone": "UTC"
+  },
+  "candidates": [
+    {
+      "bucket": "merged",
+      "entity_id": "github.com/acme/demo/pull/10",
+      "number": 10,
+      "score": 65,
+      "score_components": {
+        "discovery_reasons": 5,
+        "merged": 10,
+        "merged_in_window": 40,
+        "recent_update": 10
+      },
+      "selected": true,
+      "selection_reason": [
+        "discovered:pr_created",
+        "merged",
+        "merged_in_window",
+        "recent_update"
+      ],
+      "skipped_reason": null,
+      "status": "selected"
+    }
+  ],
+  "counts": {
+    "candidates": 1,
+    "failed": 0,
+    "merged_selected": 1,
+    "not_attempted": 0,
+    "open_selected": 0,
+    "selected": 1,
+    "skipped_quota": 0,
+    "skipped_unchanged": 0
+  },
+  "limitations": [
+    "observed_current_state"
+  ],
+  "observed_at": "2026-11-01T08:00:10Z",
+  "quota": {
+    "deep_entities_used": 1,
+    "max_deep_entities": 40,
+    "merged_quota": 14,
+    "open_quota": 8,
+    "pr_quota": 22,
+    "agent_pr_reserve": 0
+  },
+  "repository": {
+    "host": "github.com",
+    "name": "demo",
+    "owner": "acme"
+  },
+  "schema_version": "1.3"
+}

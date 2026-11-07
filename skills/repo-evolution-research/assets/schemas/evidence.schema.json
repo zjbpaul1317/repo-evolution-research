@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repo-evolution-research.local/schemas/evidence.schema.json",
+  "title": "Traceable evidence fragment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "entity_id",
+    "source_url",
+    "source_kind",
+    "observed_at",
+    "source_event_at",
+    "source_revision",
+    "blob_sha256",
+    "locator",
+    "text",
+    "completeness",
+    "verification"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "pattern": "[\\r\\n]"
+      }
+    },
+    "entity_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "source_kind": {
+      "enum": [
+        "pull_request_body",
+        "pull_request_comment",
+        "pull_request_review",
+        "pull_request_review_comment",
+        "pull_request_diff",
+        "issue_body",
+        "issue_comment",
+        "discussion_body",
+        "discussion_comment",
+        "commit_message",
+        "release_body",
+        "doc_content",
+        "source_file",
+        "external_page",
+        "api_response"
+      ]
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_event_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "source_revision": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "blob_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "not": {
+        "pattern": "[\\r\\n]"
+      }
+    },
+    "locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "pointer",
+        "char_start",
+        "char_end",
+        "line_start",
+        "line_end"
+      ],
+      "properties": {
+        "format": {
+          "enum": [
+            "json_pointer",
+            "char_range",
+            "line_range",
+            "url_fragment"
+          ]
+        },
+        "pointer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "char_start": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "char_end": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "line_start": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "line_end": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "url_fragment": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "text": {
+      "type": "string"
+    },
+    "completeness": {
+      "enum": [
+        "complete",
+        "truncated",
+        "partial",
+        "unknown"
+      ]
+    },
+    "verification": {
+      "enum": [
+        "verified",
+        "unverifiable",
+        "failed"
+      ]
+    }
+  }
+}

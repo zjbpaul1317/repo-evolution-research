@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repo-evolution-research.local/schemas/relation.schema.json",
+  "title": "Directed relation between two entities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "from_id",
+    "to_id",
+    "type",
+    "basis",
+    "verification",
+    "evidence_ids",
+    "scope"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "from_id": { "type": "string", "minLength": 1 },
+    "to_id": { "type": "string", "minLength": 1 },
+    "type": {
+      "enum": [
+        "mentions",
+        "addresses",
+        "closing_reference",
+        "implements_part_of",
+        "contains_commit",
+        "release_note_mentions",
+        "verified_in_release",
+        "documents",
+        "supersedes",
+        "reverts",
+        "duplicates",
+        "related_candidate"
+      ]
+    },
+    "basis": { "enum": ["api_explicit", "text_explicit", "agent_inferred"] },
+    "verification": { "enum": ["candidate", "verified", "disputed"] },
+    "evidence_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "scope": {
+      "type": ["object", "null"]
+    }
+  }
+}

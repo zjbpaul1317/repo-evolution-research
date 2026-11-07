@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repo-evolution-research.local/schemas/release_detail.schema.json",
+  "title": "Authoritative snapshot of a single GitHub release",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "observed_at",
+    "repository",
+    "release_id",
+    "tag_name",
+    "name",
+    "url",
+    "author",
+    "draft",
+    "prerelease",
+    "created_at",
+    "published_at",
+    "target_commitish",
+    "tag_ref",
+    "tag_moved",
+    "previous_commit_sha",
+    "body",
+    "coverage",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": {
+      "enum": ["1.2", "1.3"]
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "repository": {
+      "$ref": "#/$defs/repository"
+    },
+    "release_id": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "tag_name": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "pattern": "[\\r\\n]"
+      }
+    },
+    "name": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "author": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "draft": {
+      "type": "boolean"
+    },
+    "prerelease": {
+      "type": "boolean"
+    },
+    "created_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "published_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "target_commitish": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tag_ref": {
+      "$ref": "#/$defs/tag_ref"
+    },
+    "tag_moved": {
+      "type": "boolean"
+    },
+    "previous_commit_sha": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "body": {
+      "$ref": "#/$defs/text_ref"
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "detail",
+        "tag",
+        "body"
+      ],
+      "properties": {
+        "detail": {
+          "$ref": "#/$defs/section_status"
+        },
+        "tag": {
+          "$ref": "#/$defs/section_status"
+        },
+        "body": {
+          "$ref": "#/$defs/section_status"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "owner",
+        "name"
+      ],
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "text_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preview",
+        "sha256",
+        "bytes",
+        "preview_truncated"
+      ],
+      "properties": {
+        "preview": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preview_truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "section_status": {
+      "enum": [
+        "complete",
+        "partial",
+        "unavailable",
+        "not_requested"
+      ]
+    },
+    "tag_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "sha",
+        "object_type",
+        "commit_sha",
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/section_status"
+        },
+        "sha": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "object_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commit_sha": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

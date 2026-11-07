@@ -1,0 +1,6 @@
+{
+  "id": "dangling-evidence",
+  "mutation": "dangling_evidence",
+  "check": "validation_error",
+  "expected_code": "missing_evidence"
+}

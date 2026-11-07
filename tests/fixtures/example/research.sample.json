@@ -1,0 +1,203 @@
+{
+  "schema_version": "1.3",
+  "run_id": "20261101T080000Z-deadbeef",
+  "created_at": "2026-11-01T08:00:00Z",
+  "topics": [
+    {
+      "id": "topic-001",
+      "title": "缓存生命周期管理",
+      "research_question": "项目为何以及如何引入显式缓存清理接口？",
+      "summary": "提案已经出现，第一个实现 PR 已合并，但尚未证明进入正式版本。",
+      "claim_ids": {
+        "background": [],
+        "problem": [
+          "claim-001"
+        ],
+        "design": [
+          "claim-001"
+        ],
+        "implementation": [
+          "claim-002"
+        ],
+        "tradeoff": [],
+        "unresolved": [
+          "claim-004"
+        ],
+        "outlook": []
+      },
+      "capability_ids": [
+        "cap-001"
+      ],
+      "reading_item_ids": [
+        "read-001",
+        "read-002",
+        "read-003"
+      ],
+      "gaps": [
+        "尚未核对 tag 祖先关系，发布结论为推断。"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim-001",
+      "text": "RFC 提出增加显式资源清理接口。",
+      "kind": "observed",
+      "evidence_ids": [
+        "ev-001"
+      ],
+      "contradicting_evidence_ids": [],
+      "confidence": "high",
+      "confidence_reason": "提案正文直接说明目标。",
+      "scope": {
+        "entity_ids": [
+          "github.com/example/demo/issue/40"
+        ],
+        "capability_id": "cap-001",
+        "revision": null,
+        "version": null
+      },
+      "reason": null,
+      "missing_evidence": [],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "claim-002",
+      "text": "PR #101 合并了清理接口的第一部分。",
+      "kind": "observed",
+      "evidence_ids": [
+        "ev-002"
+      ],
+      "contradicting_evidence_ids": [],
+      "confidence": "high",
+      "confidence_reason": "PR 正文说明实现范围，合并状态来自对象元数据。",
+      "scope": {
+        "entity_ids": [
+          "github.com/example/demo/pull/101"
+        ],
+        "capability_id": "cap-001",
+        "revision": "2222222222222222222222222222222222222222",
+        "version": null
+      },
+      "reason": null,
+      "missing_evidence": [],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "claim-003",
+      "text": "v0.1.0 发布于该 PR 合并之前，因此不包含这项能力。",
+      "kind": "inferred",
+      "evidence_ids": [
+        "ev-002",
+        "ev-003"
+      ],
+      "contradicting_evidence_ids": [],
+      "confidence": "medium",
+      "confidence_reason": "两个发布时间明确，但未比较 tag 祖先关系。",
+      "scope": {
+        "entity_ids": [
+          "github.com/example/demo/pull/101",
+          "github.com/example/demo/release/v0.1.0"
+        ],
+        "capability_id": "cap-001",
+        "revision": null,
+        "version": "v0.1.0"
+      },
+      "reason": null,
+      "missing_evidence": [],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "claim-004",
+      "text": "剩余子能力是否已经实现。",
+      "kind": "unknown",
+      "evidence_ids": [],
+      "contradicting_evidence_ids": [],
+      "confidence": "low",
+      "confidence_reason": "窗口内没有找到后续实现或发布记录。",
+      "scope": {
+        "entity_ids": [],
+        "capability_id": "cap-001",
+        "revision": null,
+        "version": null
+      },
+      "reason": "只有提案和部分实现，缺少后续 PR 与版本内容证据。",
+      "missing_evidence": [
+        "后续实现 PR",
+        "包含该能力的 release 内容"
+      ],
+      "state_time_basis": "observed_current"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "cap-001",
+      "topic_id": "topic-001",
+      "title": "显式缓存清理接口",
+      "scope": "清理 API 骨架；跨 policy 清理尚未实现",
+      "proposal_state": "proposed",
+      "implementation_state": "partially_merged",
+      "delivery_state": "not_found",
+      "availability": "unknown",
+      "target_branch": "main",
+      "observed_revision": "1111111111111111111111111111111111111111",
+      "verified_versions": [],
+      "requirements": {
+        "done": [
+          "清理 API 骨架"
+        ],
+        "remaining": [
+          "跨 policy 清理",
+          "错误路径资源释放"
+        ]
+      },
+      "evidence_ids": [
+        "ev-001",
+        "ev-002",
+        "ev-003"
+      ]
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "unk-001",
+      "topic_id": "topic-001",
+      "claim_id": "claim-004"
+    }
+  ],
+  "reading_list": [
+    {
+      "id": "read-001",
+      "priority": "P0",
+      "kind": "rfc",
+      "title": "RFC: explicit cache lifecycle",
+      "url": "https://github.com/example/demo/issues/40",
+      "entity_id": "github.com/example/demo/issue/40",
+      "why": "理解为什么需要显式清理接口。",
+      "order": 0
+    },
+    {
+      "id": "read-002",
+      "priority": "P0",
+      "kind": "pr",
+      "title": "Add cleanup API skeleton",
+      "url": "https://github.com/example/demo/pull/101",
+      "entity_id": "github.com/example/demo/pull/101",
+      "why": "确认第一个实现覆盖的范围。",
+      "order": 1
+    },
+    {
+      "id": "read-003",
+      "priority": "P1",
+      "kind": "release",
+      "title": "v0.1.0",
+      "url": "https://github.com/example/demo/releases/tag/v0.1.0",
+      "entity_id": "github.com/example/demo/release/v0.1.0",
+      "why": "核对该能力是否进入正式版本。",
+      "order": 2
+    }
+  ],
+  "limitations": [
+    "虚构样例，仅用于 M0 契约测试，不代表任何真实项目。"
+  ]
+}

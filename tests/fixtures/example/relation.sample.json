@@ -1,0 +1,14 @@
+{
+  "id": "rel-001",
+  "from_id": "github.com/example/demo/pull/101",
+  "to_id": "github.com/example/demo/issue/40",
+  "type": "implements_part_of",
+  "basis": "text_explicit",
+  "verification": "verified",
+  "evidence_ids": [
+    "ev-002"
+  ],
+  "scope": {
+    "capability_id": "cap-001"
+  }
+}

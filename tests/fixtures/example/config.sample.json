@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.3",
+  "repository": {
+    "input": "https://github.com/example/demo",
+    "host": "github.com",
+    "owner": "example",
+    "name": "demo",
+    "slug": "example/demo",
+    "canonical_url": "https://github.com/example/demo"
+  },
+  "mode": "standard",
+  "window": {
+    "start": "2026-08-03T08:00:00Z",
+    "end": "2026-11-01T08:00:00Z",
+    "timezone": "UTC",
+    "duration_days": 90.0,
+    "expression": {
+      "kind": "days",
+      "days": 90,
+      "months": null
+    }
+  },
+  "focus": [],
+  "compare_previous": false,
+  "include_discussions": true,
+  "include_docs": true,
+  "language": "zh-CN",
+  "output_root": ".repo-research",
+  "budget": {
+    "max_requests": 400,
+    "max_discovery_entities": 6000,
+    "max_deep_entities": 40,
+    "max_deep_prs": 22,
+    "agent_pr_reserve": 4,
+    "max_relation_hops": 2,
+    "max_external_entities": 20,
+    "max_response_bytes": 8388608,
+    "max_total_bytes": 157286400,
+    "max_runtime_minutes": 35,
+    "max_pack_chars": 100000
+  },
+  "config_hash": "8fffb3337b956a83f5a684464c916266751ecab737614135fbe34f8ad06e0718"
+}

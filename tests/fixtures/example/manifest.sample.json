@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.3",
+  "run_id": "20261101T080000Z-deadbeef",
+  "tool_version": "0.2.0",
+  "state": "initialized",
+  "created_at": "2026-11-01T08:00:00Z",
+  "updated_at": "2026-11-01T08:00:00Z",
+  "repository": {
+    "input": "https://github.com/example/demo",
+    "host": "github.com",
+    "owner": "example",
+    "name": "demo",
+    "slug": "example/demo",
+    "canonical_url": "https://github.com/example/demo"
+  },
+  "config_hash": "8fffb3337b956a83f5a684464c916266751ecab737614135fbe34f8ad06e0718",
+  "activity_window": {
+    "start": "2026-08-03T08:00:00Z",
+    "end": "2026-11-01T08:00:00Z",
+    "timezone": "UTC"
+  },
+  "observed": {
+    "started_at": null,
+    "finished_at": null
+  },
+  "collection_started_at": null,
+  "collection_finished_at": null,
+  "state_time_basis": "observed_current",
+  "default_branch": "main",
+  "default_branch_sha": "0123456789abcdef0123456789abcdef01234567",
+  "coverage": [],
+  "budget": {
+    "max_requests": 400,
+    "max_discovery_entities": 6000,
+    "max_deep_entities": 40,
+    "max_deep_prs": 22,
+    "agent_pr_reserve": 4,
+    "max_relation_hops": 2,
+    "max_external_entities": 20,
+    "max_response_bytes": 8388608,
+    "max_total_bytes": 157286400,
+    "max_runtime_minutes": 35,
+    "max_pack_chars": 100000
+  },
+  "budget_consumed": {
+    "requests": 0,
+    "response_bytes": 0,
+    "total_bytes": 0,
+    "deep_entities": 0,
+    "runtime_seconds": 0
+  },
+  "stages": {
+    "initialized": "complete",
+    "collect": "not_started",
+    "prepare": "not_started",
+    "research": "not_started",
+    "validate": "not_started",
+    "render": "not_started"
+  },
+  "notes": []
+}

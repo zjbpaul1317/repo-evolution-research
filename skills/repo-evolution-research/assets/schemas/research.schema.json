@@ -1,0 +1,525 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repo-evolution-research.local/schemas/research.schema.json",
+  "title": "Structured research output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "created_at",
+    "topics",
+    "claims",
+    "capabilities",
+    "unknowns",
+    "reading_list",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": {
+      "enum": ["1.2", "1.3"]
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$",
+      "not": {
+        "pattern": "[\\r\\n]"
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "topics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/topic"
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim"
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/capability"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/unknown"
+      }
+    },
+    "reading_list": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reading_item"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "$defs": {
+    "claim_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entity_ids",
+        "capability_id",
+        "revision",
+        "version"
+      ],
+      "properties": {
+        "entity_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "capability_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 2,
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "versions"
+            ]
+          },
+          "then": {
+            "properties": {
+              "version": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "kind",
+        "evidence_ids",
+        "contradicting_evidence_ids",
+        "confidence",
+        "confidence_reason",
+        "scope",
+        "reason",
+        "missing_evidence",
+        "state_time_basis"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "observed",
+            "inferred",
+            "unknown"
+          ]
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "evidence_quotes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "contradicting_evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "confidence_reason": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/claim_scope"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "missing_evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "state_time_basis": {
+          "enum": [
+            "observed_current",
+            "historical_reconstructed"
+          ]
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "topic_id",
+        "title",
+        "scope",
+        "proposal_state",
+        "implementation_state",
+        "delivery_state",
+        "availability",
+        "target_branch",
+        "observed_revision",
+        "verified_versions",
+        "requirements",
+        "evidence_ids"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "topic_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string"
+        },
+        "proposal_state": {
+          "enum": [
+            "unknown",
+            "proposed",
+            "discussing",
+            "accepted",
+            "rejected",
+            "superseded"
+          ]
+        },
+        "implementation_state": {
+          "enum": [
+            "unknown",
+            "not_started",
+            "in_progress",
+            "partially_merged",
+            "merged",
+            "reverted"
+          ]
+        },
+        "delivery_state": {
+          "enum": [
+            "unknown",
+            "not_found",
+            "prerelease",
+            "released"
+          ]
+        },
+        "availability": {
+          "enum": [
+            "unknown",
+            "experimental",
+            "opt_in",
+            "default_on",
+            "deprecated",
+            "removed"
+          ]
+        },
+        "target_branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "observed_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verified_versions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "requirements": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "done",
+            "remaining"
+          ],
+          "properties": {
+            "done": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "remaining": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "topic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "research_question",
+        "summary",
+        "claim_ids",
+        "capability_ids",
+        "reading_item_ids",
+        "gaps"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "research_question": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string"
+        },
+        "claim_ids": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "background",
+            "problem",
+            "design",
+            "implementation",
+            "tradeoff",
+            "unresolved",
+            "outlook"
+          ],
+          "properties": {
+            "background": {
+              "$ref": "#/$defs/id_list"
+            },
+            "problem": {
+              "$ref": "#/$defs/id_list"
+            },
+            "design": {
+              "$ref": "#/$defs/id_list"
+            },
+            "implementation": {
+              "$ref": "#/$defs/id_list"
+            },
+            "tradeoff": {
+              "$ref": "#/$defs/id_list"
+            },
+            "unresolved": {
+              "$ref": "#/$defs/id_list"
+            },
+            "outlook": {
+              "$ref": "#/$defs/id_list"
+            }
+          }
+        },
+        "capability_ids": {
+          "$ref": "#/$defs/id_list"
+        },
+        "reading_item_ids": {
+          "$ref": "#/$defs/id_list"
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "id_list": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "unknown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "topic_id",
+        "claim_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "topic_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "claim_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "reading_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "priority",
+        "kind",
+        "title",
+        "url",
+        "entity_id",
+        "why",
+        "order"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "priority": {
+          "enum": [
+            "P0",
+            "P1",
+            "P2"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "rfc",
+            "issue",
+            "pr",
+            "discussion",
+            "release",
+            "doc",
+            "source",
+            "external"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "entity_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "why": {
+          "type": "string",
+          "minLength": 1
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

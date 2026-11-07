@@ -1,0 +1,6 @@
+{
+  "id": "missing-limitations",
+  "mutation": "missing_limitations",
+  "check": "validation_error",
+  "expected_code": "missing_limitations"
+}

@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repo-evolution-research.local/schemas/config.schema.json",
+  "title": "Resolved research configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "repository",
+    "mode",
+    "window",
+    "focus",
+    "compare_previous",
+    "include_discussions",
+    "include_docs",
+    "language",
+    "output_root",
+    "budget",
+    "config_hash"
+  ],
+  "properties": {
+    "schema_version": {
+      "enum": [
+        "1.2",
+        "1.3"
+      ]
+    },
+    "repository": {
+      "$ref": "#/$defs/repository"
+    },
+    "mode": {
+      "enum": [
+        "quick",
+        "standard",
+        "deep"
+      ]
+    },
+    "window": {
+      "$ref": "#/$defs/window"
+    },
+    "focus": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "compare_previous": {
+      "type": "boolean"
+    },
+    "include_discussions": {
+      "type": "boolean"
+    },
+    "include_docs": {
+      "type": "boolean"
+    },
+    "language": {
+      "type": "string",
+      "minLength": 2
+    },
+    "output_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budget": {
+      "$ref": "#/$defs/budget"
+    },
+    "config_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "$defs": {
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input",
+        "host",
+        "owner",
+        "name",
+        "slug",
+        "canonical_url"
+      ],
+      "properties": {
+        "input": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host": {
+          "const": "github.com"
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "not": {
+            "pattern": "[\\r\\n]"
+          }
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "not": {
+            "pattern": "[\\r\\n]"
+          }
+        },
+        "slug": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "not": {
+            "pattern": "[\\r\\n]"
+          }
+        },
+        "canonical_url": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end",
+        "timezone",
+        "duration_days",
+        "expression"
+      ],
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "duration_days": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "expression": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "days",
+            "months"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "days",
+                "months",
+                "explicit"
+              ]
+            },
+            "days": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "months": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_requests",
+        "max_discovery_entities",
+        "max_deep_entities",
+        "max_relation_hops",
+        "max_external_entities",
+        "max_response_bytes",
+        "max_total_bytes",
+        "max_runtime_minutes",
+        "max_pack_chars"
+      ],
+      "properties": {
+        "max_requests": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_discovery_entities": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_deep_entities": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_deep_prs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "agent_pr_reserve": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_relation_hops": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_external_entities": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_response_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_total_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_runtime_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_pack_chars": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,204 @@
+{
+  "additions": 12,
+  "author": "alice",
+  "base_sha": "cccccccccccccccccccccccccccccccccccccccc",
+  "body": {
+    "bytes": 11,
+    "preview": "Body for 10",
+    "preview_truncated": false,
+    "sha256": "ef528f1178a2430e02f1789f2aa4cf7359b7520209c1594396c66ccd92b5e1a1"
+  },
+  "changed_files": 2,
+  "closed_at": "2026-10-20T10:00:00Z",
+  "comments_count": 1,
+  "commits": {
+    "duplicates": 0,
+    "fetched": 1,
+    "items": [
+      {
+        "author": "Alice",
+        "date": "2026-10-19T09:00:00Z",
+        "message": {
+          "bytes": 11,
+          "preview": "Add planner",
+          "preview_truncated": false,
+          "sha256": "4a1de5e8e1cbfaded208ec4239442cb2c78b3c2ca13db36865b3e775b31ecea5"
+        },
+        "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "status": "complete",
+    "total_known": 1,
+    "truncated": false,
+    "truncation_reason": null
+  },
+  "commits_count": 1,
+  "comparator": "github_pr_files",
+  "coverage": {
+    "commits": "complete",
+    "detail": "partial",
+    "files": "complete",
+    "issue_comments": "complete",
+    "review_comments": "complete",
+    "reviews": "complete"
+  },
+  "created_at": "2026-09-01T00:00:00Z",
+  "deletions": 3,
+  "diff": {
+    "bytes": 0,
+    "sha256": null,
+    "status": "not_requested",
+    "truncated": false
+  },
+  "draft": false,
+  "files": {
+    "duplicates": 0,
+    "fetched": 2,
+    "items": [
+      {
+        "additions": 10,
+        "changes": 12,
+        "deletions": 2,
+        "filename": "src/cache.py",
+        "patch": {
+          "bytes": 11,
+          "preview": "@@ -1 +1 @@",
+          "preview_truncated": false,
+          "sha256": "c728f3a1d80a5f979b6fdb3d52bdf3443778cd1dcce7edc45957c60225413db8"
+        },
+        "patch_status": "available",
+        "previous_filename": null,
+        "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "status": "modified"
+      },
+      {
+        "additions": 10,
+        "changes": 12,
+        "deletions": 2,
+        "filename": "assets/model.bin",
+        "patch": null,
+        "patch_status": "missing",
+        "previous_filename": null,
+        "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "status": "modified"
+      }
+    ],
+    "status": "complete",
+    "total_known": 2,
+    "truncated": false,
+    "truncation_reason": null
+  },
+  "head_changed": true,
+  "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "head_sha_end": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "issue_comments": {
+    "duplicates": 0,
+    "fetched": 1,
+    "items": [
+      {
+        "author_association": "MEMBER",
+        "body": {
+          "bytes": 17,
+          "preview": "Looks reasonable.",
+          "preview_truncated": false,
+          "sha256": "fe4e2582e1c798f95c53d0b26fe7aa83e93999a375b11c1f8280fdfcde096300"
+        },
+        "created_at": "2026-10-02T08:00:00Z",
+        "id": 9010,
+        "updated_at": "2026-10-02T08:00:00Z",
+        "user": "bob"
+      }
+    ],
+    "status": "complete",
+    "total_known": 1,
+    "truncated": false,
+    "truncation_reason": null
+  },
+  "limitations": [
+    "head_changed",
+    "observed_current_state",
+    "patch_missing",
+    "review_resolution_unknown",
+    "squash_rebase_unverified"
+  ],
+  "merge_commit_sha": "dddddddddddddddddddddddddddddddddddddddd",
+  "merged": true,
+  "merged_at": "2026-10-20T10:00:00Z",
+  "number": 10,
+  "observed_at": "2026-11-01T08:00:10Z",
+  "repository": {
+    "host": "github.com",
+    "name": "demo",
+    "owner": "acme"
+  },
+  "review_comments": {
+    "duplicates": 0,
+    "fetched": 1,
+    "items": [
+      {
+        "body": {
+          "bytes": 18,
+          "preview": "Please add a test.",
+          "preview_truncated": false,
+          "sha256": "248ae85d1cc90268e0638d19ae7828ba49d0b91dd9866aaa0da3e63180f090c7"
+        },
+        "commit_id": "ffffffffffffffffffffffffffffffffffffffff",
+        "diff_hunk": {
+          "bytes": 13,
+          "preview": "@@ -40 +40 @@",
+          "preview_truncated": false,
+          "sha256": "b968d49fca82aef0b65927993b809426e4833808262ea0e187614dc8626f205b"
+        },
+        "id": 8010,
+        "in_reply_to_id": null,
+        "line": 42,
+        "original_line": 42,
+        "outdated": true,
+        "path": "src/cache.py",
+        "pull_request_review_id": 7001,
+        "user": "carol"
+      }
+    ],
+    "status": "complete",
+    "total_known": 1,
+    "truncated": false,
+    "truncation_reason": null
+  },
+  "review_comments_count": 1,
+  "reviews": {
+    "duplicates": 0,
+    "fetched": 1,
+    "items": [
+      {
+        "body": {
+          "bytes": 4,
+          "preview": "LGTM",
+          "preview_truncated": false,
+          "sha256": "be4b3d91e203e93bde6393ce41b9c9578eb9051951e1b2df69642085423770e7"
+        },
+        "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": 7010,
+        "outdated": false,
+        "resolution": "unknown",
+        "state": "APPROVED",
+        "submitted_at": "2026-10-19T12:00:00Z",
+        "user": "carol"
+      }
+    ],
+    "status": "complete",
+    "total_known": null,
+    "truncated": false,
+    "truncation_reason": null
+  },
+  "schema_version": "1.3",
+  "selection_reason": [
+    "discovered:pr_created",
+    "merged",
+    "merged_in_window",
+    "recent_update"
+  ],
+  "state": "closed",
+  "title": "PR 10",
+  "updated_at": "2026-10-20T10:00:00Z",
+  "url": "https://github.com/acme/demo/pull/10"
+}

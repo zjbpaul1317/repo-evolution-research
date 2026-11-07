@@ -1,0 +1,140 @@
+{
+  "schema_version": "1.0",
+  "case_id": "vllm-20261104-kv-correctness",
+  "repository": "vllm-project/vllm",
+  "window": {
+    "start": "2026-08-06T12:07:44Z",
+    "end": "2026-11-04T12:07:44Z",
+    "timezone": "Asia/Shanghai"
+  },
+  "source": {
+    "default_branch_sha": "69d27bf8002a4634de1699c95fb0aeb22fb86ca5",
+    "snapshot": "20261104T120744Z-f0067783",
+    "annotation_version": "1",
+    "annotated_by": "Codex agent; source-first review, not independent human adjudication",
+    "annotated_at": "2026-11-07T07:23:15Z"
+  },
+  "topics": [
+    {
+      "id": "topk",
+      "title": "稀疏注意力 Top-k 正确性",
+      "research_question": "固定候选缓冲区为什么会返回错误值，关闭 PR 能否视为合并？",
+      "why_it_matters": "区分已关闭与已合并，避免将替代实现的评论误记成原 PR 交付。",
+      "key_evidence_ids": [
+        "ev-a6f5e436e49738ea",
+        "ev-df1ea030da3061a5"
+      ]
+    },
+    {
+      "id": "mamba",
+      "title": "Mamba prefill 内部检查点",
+      "research_question": "如何避免 prefix caching 的第二次整模型 forward，性能数字适用范围是什么？",
+      "why_it_matters": "区分已合并的检查点机制、作者基准和仍待支持的路径。",
+      "key_evidence_ids": [
+        "ev-ac206b9848bc7c7f",
+        "ev-a6baea97a20723c5",
+        "ev-d379cc778e2c3565"
+      ]
+    },
+    {
+      "id": "recovery",
+      "title": "KV offload 所有权与加载失败恢复",
+      "research_question": "共享区清理与失败回滚分别修复什么，验证边界在哪里？",
+      "why_it_matters": "两项不同的状态一致性修复都仍为 open，不能写成已落地。",
+      "key_evidence_ids": [
+        "ev-baaa2f6ec0f9bc82",
+        "ev-612abed8a0cf42c7",
+        "ev-b48698bf3c3af041",
+        "ev-394a035d9d38fd1d"
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "topk",
+      "topic_title": "稀疏注意力 Top-k 正确性",
+      "title": "persistent_topk 溢出精确回退",
+      "proposal_state": "unknown",
+      "implementation_state": "unknown",
+      "delivery_state": "unknown",
+      "availability": "unknown",
+      "key_evidence_ids": [
+        "ev-a6f5e436e49738ea",
+        "ev-df1ea030da3061a5"
+      ]
+    },
+    {
+      "id": "checkpoint",
+      "topic_title": "Mamba prefill 内部检查点",
+      "title": "Mamba 内部 prefill checkpoint",
+      "proposal_state": "unknown",
+      "implementation_state": "merged",
+      "delivery_state": "unknown",
+      "availability": "unknown",
+      "key_evidence_ids": [
+        "ev-ac206b9848bc7c7f",
+        "ev-a6baea97a20723c5",
+        "ev-d379cc778e2c3565"
+      ]
+    },
+    {
+      "id": "ownership",
+      "topic_title": "KV offload 所有权与加载失败恢复",
+      "title": "共享 mmap 生命周期清理",
+      "proposal_state": "unknown",
+      "implementation_state": "in_progress",
+      "delivery_state": "unknown",
+      "availability": "unknown",
+      "key_evidence_ids": [
+        "ev-baaa2f6ec0f9bc82",
+        "ev-612abed8a0cf42c7"
+      ]
+    },
+    {
+      "id": "rollback",
+      "topic_title": "KV offload 所有权与加载失败恢复",
+      "title": "KV load rejection 状态恢复",
+      "proposal_state": "unknown",
+      "implementation_state": "in_progress",
+      "delivery_state": "unknown",
+      "availability": "unknown",
+      "key_evidence_ids": [
+        "ev-b48698bf3c3af041",
+        "ev-394a035d9d38fd1d"
+      ]
+    }
+  ],
+  "unknowns": [
+    {
+      "topic_title": "稀疏注意力 Top-k 正确性",
+      "missing_evidence": [
+        "verified_in_release 及 tag 内容核验"
+      ],
+      "reason": "缺少 release tag 内容核验，不能确认对应能力已经交付。"
+    },
+    {
+      "topic_title": "Mamba prefill 内部检查点",
+      "missing_evidence": [
+        "verified_in_release 及 tag 内容核验"
+      ],
+      "reason": "缺少 release tag 内容核验，不能确认对应能力已经交付。"
+    },
+    {
+      "topic_title": "KV offload 所有权与加载失败恢复",
+      "missing_evidence": [
+        "verified_in_release 及 tag 内容核验"
+      ],
+      "reason": "缺少 release tag 内容核验，不能确认对应能力已经交付。"
+    }
+  ],
+  "relations": [],
+  "notes": [
+    "范围限定为四份 PR 原始材料的主题锚点；不代表全仓库 90 天主题召回。",
+    "在该 run 没有 research.json 时冻结标注，未从已有报告反抄。评测报告随后单独编写。",
+    "PR #52149 closed 且 merged=false，后续评论指向替代 PR，未核验替代 PR 内容或发布。",
+    "PR #52789 merged=true；能力范围为内部 checkpoint，正文列出的 spec decode 等后续任务不属于已完成范围。",
+    "PR #53073/#53298 open；作者测试声明不是本项目独立 GPU 验证。",
+    "未独立标注关系闭包，relations=[] 的 precision/recall 必须为 null，不作为满分。",
+    "不是人工盲评，保留待领域评审者裁定的空间。"
+  ]
+}
