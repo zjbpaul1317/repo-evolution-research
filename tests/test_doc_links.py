@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skills/repo-evolution-research"
 DOCS = [
     ROOT / "README.md",
-    ROOT / "README.en.md",
+    ROOT / "README.zh-CN.md",
     ROOT / "CONTRIBUTING.md",
     ROOT / "SECURITY.md",
     ROOT / "THIRD_PARTY_NOTICES.md",

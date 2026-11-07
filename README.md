@@ -2,7 +2,7 @@
 
 **Understand how a GitHub project evolved, with evidence you can inspect.**
 
-[简体中文](README.md) · [Workflow reference](skills/repo-evolution-research/references/workflow.md) · [Contributing](CONTRIBUTING.md) · [MIT License](LICENSE)
+[简体中文](README.zh-CN.md) · [Workflow reference](skills/repo-evolution-research/references/workflow.md) · [Contributing](CONTRIBUTING.md) · [MIT License](LICENSE)
 
 A research Skill for coding agents, backed by a local Python CLI. It collects PRs, issues, RFCs, discussions, releases, and documentation, saves an evidence ledger, and helps an agent explain technical direction, design decisions, implementation progress, and unresolved questions.
 

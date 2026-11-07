@@ -4,7 +4,7 @@
 
 ## 开始之前
 
-先阅读 [README](README.md) 和 [工作流契约](skills/repo-evolution-research/references/workflow.md)。项目的核心目标是提供可核查的技术研究：来源、状态、未知项和采集局限都属于输出的一部分。
+先阅读 [中文 README](README.zh-CN.md)、[英文 README](README.md) 和 [工作流契约](skills/repo-evolution-research/references/workflow.md)。项目的核心目标是提供可核查的技术研究：来源、状态、未知项和采集局限都属于输出的一部分。
 
 - Bug：描述预期行为、实际行为、工具版本、Python / OS，以及最小复现。
 - 研究质量：提供原始来源、受影响的断言和准确引文，说明是遗漏、错误关联、状态提升还是解释偏差。

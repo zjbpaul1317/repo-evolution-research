@@ -2,7 +2,7 @@
 
 **把一个 GitHub 项目最近的技术变化，整理成有来源、能核查、说明局限的研究报告。**
 
-[English](README.en.md) · [使用工作流](skills/repo-evolution-research/references/workflow.md) · [贡献指南](CONTRIBUTING.md) · [MIT License](LICENSE)
+[English](README.md) · [使用工作流](skills/repo-evolution-research/references/workflow.md) · [贡献指南](CONTRIBUTING.md) · [MIT License](LICENSE)
 
 这是一套面向编码 Agent 的研究 Skill，附带本地 Python CLI。它从 PR、Issue、RFC、Discussion、Release 和文档中收集材料，保存证据账本，让 Agent 研究项目的技术方向、设计取舍、实现进展和未解决问题，再校验引用与状态并生成中文报告。
 
