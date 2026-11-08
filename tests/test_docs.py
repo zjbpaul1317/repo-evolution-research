@@ -11,6 +11,7 @@ import pytest
 from rer.collectors.base import CollectContext
 from rer.collectors.docs import (
     HISTORY_CAP,
+    _history_targets,
     collect_documents,
     derive_doc_limitations,
     doc_path,
@@ -236,6 +237,22 @@ def test_document_history_limit_is_visible(tmp_path: Path) -> None:
         == f"history_limit_{HISTORY_CAP}"
     )
     assert "doc_history_truncated" in document["limitations"]
+
+
+def test_history_targets_prioritize_design_like_paths() -> None:
+    candidates = [
+        ("README.md", "documentation"),
+        ("docs/program_scheduling/design.md", "documentation"),
+        ("docs/design/rfc-cache.md", "documentation"),
+        ("docs/cli_reference.md", "documentation"),
+    ]
+
+    targets = _history_targets(candidates)
+    assert targets[:2] == [
+        "docs/program_scheduling/design.md",
+        "docs/design/rfc-cache.md",
+    ]
+    assert "README.md" in targets
 
 
 def test_document_history_reuse_and_force_refresh(tmp_path: Path) -> None:
@@ -538,7 +555,9 @@ def test_moved_revision_creates_new_snapshot_path(tmp_path: Path) -> None:
 
 def test_profile_file_is_reused_without_http(tmp_path: Path) -> None:
     def handler(endpoint: str, input_text: str) -> CommandResult:
-        raise AssertionError("profile file should avoid HTTP")
+        if endpoint == "repos/acme/demo/commits":
+            return http_response(200, [])
+        raise AssertionError("profile file should avoid content HTTP")
 
     store, client = make_client(tmp_path, handler)
     payload = b"profile document"
@@ -596,6 +615,8 @@ def test_empty_document_is_readable(tmp_path: Path) -> None:
 
 def test_document_selection_truncation_is_visible(tmp_path: Path) -> None:
     def handler(endpoint: str, input_text: str) -> CommandResult:
+        if endpoint == "repos/acme/demo/commits":
+            return http_response(200, [])
         path = endpoint.split("/contents/", 1)[1]
         return http_response(200, content_body(path, "page"))
 
@@ -628,6 +649,8 @@ def test_docs_auth_failure_is_fatal(tmp_path: Path) -> None:
 
 def test_non_text_candidates_are_filtered(tmp_path: Path) -> None:
     def handler(endpoint: str, input_text: str) -> CommandResult:
+        if endpoint == "repos/acme/demo/commits":
+            return http_response(200, [])
         path = endpoint.split("/contents/", 1)[1]
         return http_response(200, content_body(path, "manual"))
 
@@ -826,6 +849,8 @@ def test_write_failure_finalizes_partial_then_raises(
     from rer.errors import StoreError
 
     def handler(endpoint: str, input_text: str) -> CommandResult:
+        if endpoint == "repos/acme/demo/commits":
+            return http_response(200, [])
         path = endpoint.split("/contents/", 1)[1]
         return http_response(200, content_body(path, "page"))
 

@@ -37,7 +37,16 @@ DOC_DIR = "raw/docs"
 MAX_DOCS = 40
 HISTORY_CAP = 20
 MAX_HISTORY_DOCS = 10
-_HISTORY_ROLES = frozenset({"design", "rfc", "architecture", "roadmap"})
+_HISTORY_ROLE_ORDER = ("design", "rfc", "architecture", "roadmap")
+_HISTORY_PATH_HINTS = (
+    "design",
+    "rfc",
+    "architecture",
+    "roadmap",
+    "scheduling",
+    "proposal",
+    "spec",
+)
 TEXT_EXTENSIONS = frozenset(
     {".md", ".markdown", ".rst", ".txt", ".adoc", ".ipynb"}
 )
@@ -111,13 +120,7 @@ def collect_documents(
         active_revision=revision,
     )
     profile_files = _profile_files(source_profile)
-    history_paths: list[str] = []
-    for path, role in candidates:
-        if role in _HISTORY_ROLES and path not in history_paths:
-            history_paths.append(path)
-        if len(history_paths) >= MAX_HISTORY_DOCS:
-            break
-    history_set = set(history_paths)
+    history_set = set(_history_targets(candidates))
     current: list[dict[str, Any]] = []
     statuses: dict[str, int] = {}
     try:
@@ -218,6 +221,32 @@ def _empty_counts(
     }
 
 
+def _history_targets(candidates: Sequence[tuple[str, str]]) -> list[str]:
+    def priority(entry: tuple[int, tuple[str, str]]) -> tuple[int, int, int]:
+        index, (path, role) = entry
+        if role in _HISTORY_ROLE_ORDER:
+            return (0, _HISTORY_ROLE_ORDER.index(role), index)
+        lowered = path.casefold()
+        if any(hint in lowered for hint in _HISTORY_PATH_HINTS):
+            return (1, 0, index)
+        return (2, 0, index)
+
+    ordered = [
+        path
+        for _index, (path, _role) in sorted(
+            enumerate(candidates),
+            key=priority,
+        )
+    ]
+    targets: list[str] = []
+    for path in ordered:
+        if path not in targets:
+            targets.append(path)
+        if len(targets) >= MAX_HISTORY_DOCS:
+            break
+    return targets
+
+
 def _snapshot_for(
     context: CollectContext,
     revision: str,
@@ -235,7 +264,11 @@ def _snapshot_for(
     existing = _reusable_snapshot(store, revision, path)
     if existing is not None:
         counts["reused"] += 1
-        if include_history and (force or "history" not in existing):
+        if (
+            include_history
+            and existing.get("status") == "read"
+            and (force or "history" not in existing)
+        ):
             updated = _attach_history(
                 context,
                 existing,
@@ -259,7 +292,7 @@ def _snapshot_for(
                 revision=revision,
                 observed_at=context.now(),
             )
-            if include_history:
+            if include_history and document.get("status") == "read":
                 document = _attach_history(
                     context,
                     document,
@@ -295,7 +328,7 @@ def _snapshot_for(
         revision=revision,
         observed_at=context.now(),
     )
-    if include_history:
+    if include_history and document.get("status") == "read":
         document = _attach_history(
             context,
             document,

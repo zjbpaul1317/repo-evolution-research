@@ -65,7 +65,7 @@
 - imported source 的正文按内容寻址 `blobs/<sha256>`；来源元数据写 `imported/<source_key>/<sha256>.json`，`source_key` 由 `source_kind` / `entity_id` / `source_url` / `source_revision` 决定。不同 URL/entity 或不同 revision 不共享来源记录；重复检索追加 `observations`，不覆盖首次观察。
 - 非 UTF-8、过大、缺失或不可访问只记录 status/limitation，不能伪造文本。固定 revision + path 且 blob/hash/bytes 校验通过时可复用；revision 或 path 变化必须重读。
 - 候选上限 `MAX_DOCS=40`。`docs=unavailable` 只在全部候选请求失败时成立；`not_found`、`too_large`、`unsupported_encoding`、`decode_error` 只记 `partial`；`include_docs=false` 记 `not_requested`；没有文本候选记 `not_applicable`。
-- 设计/RFC/架构/roadmap 文档额外读取最多 10 篇、每篇最多 20 条的提交历史，写入可选 `history` section；历史请求失败只记录 `doc_history_unavailable` / `doc_history_partial`，不把正文读取降级。固定 revision + path 的历史可复用，`--force` 重新读取。
+- 选中文档额外读取提交历史，优先设计/RFC/架构/roadmap 以及路径含 design/rfc/architecture/roadmap/scheduling/proposal/spec 的文档，其次其他文档；最多 10 篇、每篇 20 条，写入可选 `history` section。历史请求失败只记录 `doc_history_unavailable` / `doc_history_partial`，不把正文读取降级。固定 revision + path 的历史可复用，`--force` 重新读取。
 - Doc entity 只投影当前 `default_branch_sha` 的快照；旧 revision 只作为归档，不进入 `normalized/entities.jsonl`。
 
 ## Issue / Discussion 深读

@@ -1,7 +1,7 @@
 <!-- template_version: 2 -->
 # acme/demo 技术演进研究（2026-08-03 至 2026-11-01）
 
-> run_id：`20261101T080000Z-aaaaaaaa` ｜ research：`e60d7a71a419f2427a9646ca6b482da4b6e31926a819d78047abb319ff8674fa` ｜ inputs：`989c0c07e0b6e83d9f8eac9326dc24e30f9bd3a7295fd4c108e9c6dfba856c21` ｜ template：`2`
+> run_id：`20261101T080000Z-aaaaaaaa` ｜ research：`e60d7a71a419f2427a9646ca6b482da4b6e31926a819d78047abb319ff8674fa` ｜ inputs：`9c3ac8e520ed8a011910044ece4fa596bc9b543311c56921ef1b946c9bfd7dab` ｜ template：`2`
 > 研究窗口：2026-08-03T08:00:00Z 至 2026-11-01T08:00:00Z（UTC）
 > 观察时间：2026-11-01T08:00:00Z 至 2026-11-01T08:00:00Z ｜ 状态口径：`observed_current`
 > research.created_at：2026-11-01T09:00:00Z
@@ -10,7 +10,7 @@
 
 - 仓库：`acme/demo`（默认分支 `main` @ `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`）
 - 覆盖：16 个通道（complete 12、not_requested 4）
-- 预算：requests 25/400、deep_entities 2/40、response_bytes 7000
+- 预算：requests 26/400、deep_entities 2/40、response_bytes 7284
 - 结论速览：
   - **Cache lifecycle**：RFC 已提出，第一个实现 PR 已合并，发布尚未核验。
 
@@ -49,7 +49,7 @@
 
 - 研究窗口：2026-08-03T08:00:00Z 至 2026-11-01T08:00:00Z（UTC），状态口径 `observed_current`。
 - 覆盖：16 个通道（complete 12、not_requested 4）。
-- 预算消耗：requests 25/400、deep_entities 2/40、response_bytes 7000。
+- 预算消耗：requests 26/400、deep_entities 2/40、response_bytes 7284。
 - 自动化校验：validation ok=true，errors 0，warnings 6。 自动校验只能证明引用与状态规则成立，不能证明语义解释正确。
 
 ### 局限
