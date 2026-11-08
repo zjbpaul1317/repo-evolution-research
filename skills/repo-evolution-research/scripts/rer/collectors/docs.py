@@ -36,7 +36,7 @@ from .values import as_optional_str, get_in, iso_or_none
 DOC_DIR = "raw/docs"
 MAX_DOCS = 40
 HISTORY_CAP = 20
-MAX_HISTORY_DOCS = 10
+MAX_HISTORY_DOCS = 15
 _HISTORY_ROLE_ORDER = ("design", "rfc", "architecture", "roadmap")
 _HISTORY_PATH_HINTS = (
     "design",

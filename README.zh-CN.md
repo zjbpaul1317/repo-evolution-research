@@ -149,7 +149,7 @@ python -m pytest tests/test_offline_loop.py -q
 
 - 报告当前固定为中文；`--language` 和 `--compare-previous` 是保留参数，尚不提供多语言报告或跨窗口对比。
 - PR 的文件列表和 patch 片段可能截断；当前不采集完整 diff，不执行目标项目测试，也不验证实际部署性能。
-- Review thread 解析使用 GraphQL，可能为 partial 或 unavailable；文档历史有界（最多 10 篇 × 20 条提交）。revert/backport 链只从显式文本引用识别，不按标签或分支名启发式猜测。
+- Review thread 解析使用 GraphQL，可能为 partial 或 unavailable；文档历史有界（最多 15 篇 × 20 条提交）。revert/backport 链只从显式文本引用识别，不按标签或分支名启发式猜测。
 - 合并、发布和可用性分别判断；Release 提及或 PR 作者的 benchmark 不能自动成为本项目独立验证的结果。
 - 受 API 访问权限、分页、速率限制和预算约束，采集可能部分完成；退出码 `4` 表示需要检查缺口或恢复步骤，不能直接忽略。
 - `validate` / `render` 门禁失败时退出码为 `5`；零证据快照不能生成正式报告。
