@@ -3,7 +3,7 @@
 
 [project]
 name = "repo-evolution-research"
-version = "0.2.8"
+version = "0.2.9"
 description = "Research the technical evolution of a GitHub repository with an auditable evidence ledger."
 readme = "README.md"
 license = "MIT"

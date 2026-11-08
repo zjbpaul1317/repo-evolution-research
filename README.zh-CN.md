@@ -2,13 +2,13 @@
 
 **把一个 GitHub 项目最近的技术变化，整理成有来源、能核查、说明局限的研究报告。**
 
-[English](README.md) · [使用工作流](skills/repo-evolution-research/references/workflow.md) · [贡献指南](CONTRIBUTING.md) · [MIT License](LICENSE)
+[English](README.md) · [使用工作流](skills/repo-evolution-research/references/workflow.md) · [更新日志](CHANGELOG.md) · [贡献指南](CONTRIBUTING.md) · [MIT License](LICENSE)
 
 这是一套面向编码 Agent 的研究 Skill，附带本地 Python CLI。它从 PR、review thread、Issue、RFC、Discussion、Release 和文档中收集材料，保存证据账本，让 Agent 研究项目的技术方向、设计取舍、实现进展和未解决问题，再校验引用与状态并生成中文报告。
 
 适合刚接触一个开源项目、准备参与贡献，或希望持续理解项目技术演进的开发者。
 
-> 当前工具版本：`0.2.8`；快照 schema：`1.3`。项目处于早期开发阶段，运行方式是源码目录调用，目前不提供独立的 pip 安装包。
+> 当前工具版本：`0.2.9`；快照 schema：`1.3`。项目处于早期开发阶段，运行方式是源码目录调用，目前不提供独立的 pip 安装包。
 
 ## 你可以用它回答什么
 
@@ -149,7 +149,8 @@ python -m pytest tests/test_offline_loop.py -q
 
 - 报告当前固定为中文；`--language` 和 `--compare-previous` 是保留参数，尚不提供多语言报告或跨窗口对比。
 - PR 的文件列表和 patch 片段可能截断；当前不采集完整 diff，不执行目标项目测试，也不验证实际部署性能。
-- Review thread 解析使用 GraphQL，可能为 partial 或 unavailable；文档历史有界（最多 15 篇 × 20 条提交）。revert/backport 链只从显式文本引用识别，不按标签或分支名启发式猜测。
+- Review thread 解析使用 GraphQL，可能为 partial 或 unavailable；单线程评论最多读取 100 条，超出时标记截断。文档历史有界（最多 15 篇 × 20 条提交）。revert/backport 链只从显式文本引用识别，不按标签或分支名启发式猜测。
+- ETag 重验证只覆盖可变单对象 REST GET（PR/Issue detail）；分页 REST 列表仍会完整重取。
 - 合并、发布和可用性分别判断；Release 提及或 PR 作者的 benchmark 不能自动成为本项目独立验证的结果。
 - 受 API 访问权限、分页、速率限制和预算约束，采集可能部分完成；退出码 `4` 表示需要检查缺口或恢复步骤，不能直接忽略。
 - `validate` / `render` 门禁失败时退出码为 `5`；零证据快照不能生成正式报告。

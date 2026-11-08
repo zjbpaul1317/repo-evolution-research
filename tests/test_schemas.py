@@ -331,7 +331,7 @@ def test_schema_and_tool_versions_are_bumped() -> None:
     from rer import SCHEMA_VERSION, TOOL_VERSION
 
     assert SCHEMA_VERSION == "1.3"
-    assert TOOL_VERSION == "0.2.8"
+    assert TOOL_VERSION == "0.2.9"
     assert load("config.sample.json")["schema_version"] == SCHEMA_VERSION
     assert load("research.sample.json")["schema_version"] == SCHEMA_VERSION
 

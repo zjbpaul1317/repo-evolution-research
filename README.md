@@ -2,13 +2,13 @@
 
 **Understand how a GitHub project evolved, with evidence you can inspect.**
 
-[简体中文](README.zh-CN.md) · [Workflow reference](skills/repo-evolution-research/references/workflow.md) · [Contributing](CONTRIBUTING.md) · [MIT License](LICENSE)
+[简体中文](README.zh-CN.md) · [Workflow reference](skills/repo-evolution-research/references/workflow.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [MIT License](LICENSE)
 
 A research Skill for coding agents, backed by a local Python CLI. It collects PRs, review threads, issues, RFCs, discussions, releases, and documentation, saves an evidence ledger, and helps an agent explain technical direction, design decisions, implementation progress, and unresolved questions.
 
 Use it when joining an unfamiliar project, preparing a contribution, or investigating a project's recent technical evolution.
 
-> Tool version: `0.2.8`. Snapshot schema: `1.3`. Early development. Reports currently use Chinese. Run the CLI from source; a standalone pip package is not provided.
+> Tool version: `0.2.9`. Snapshot schema: `1.3`. Early development. Reports currently use Chinese. Run the CLI from source; a standalone pip package is not provided.
 
 ## What it helps answer
 
@@ -143,7 +143,8 @@ The [vLLM KV correctness case](evals/cases/vllm-20261104-kv-correctness/notes.md
 
 - Reports are fixed to Chinese. `--language` and `--compare-previous` are reserved; multilingual reports and window comparisons are not implemented.
 - File lists and patch excerpts may be truncated. Full diffs are not collected. The tool does not execute target-project tests or independently reproduce deployment or benchmark claims.
-- Review thread resolution uses GraphQL and can be partial or unavailable. Document history is bounded (15 documents × 20 commits). Revert and backport chains are detected only from explicit text references, not labels or branch-name heuristics.
+- Review thread resolution uses GraphQL and can be partial or unavailable. Review thread comments are capped at 100 per thread; longer threads are marked truncated. Document history is bounded (15 documents × 20 commits). Revert and backport chains are detected only from explicit text references, not labels or branch-name heuristics.
+- ETag revalidation covers mutable single-object REST GETs (PR/Issue detail) only; paginated REST lists are re-fetched in full.
 - Merged changes, release evidence, and availability are separate. Release-note mentions do not automatically prove delivery.
 - Permissions, pagination, rate limits, and budgets can leave partial coverage. Inspect exit code `4` and the recorded gaps before continuing.
 - Validation or rendering failures use exit code `5`. Empty-evidence snapshots cannot produce a formal report.

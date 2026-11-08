@@ -34,7 +34,7 @@ README 已作为项目首页，无需为介绍项目额外部署 GitHub Pages。
 2. 在可控的小窗口完成一次新的真实 `collect → prepare → Agent research → validate → render`，记录准确提交和环境，保留 coverage 与局限。
 3. 由未参与报告写作的评审者核对部分主题与关键断言，明确评测样本和未覆盖范围。
 4. 确认 CI 实际通过，首页链接、示例、许可证和第三方来源说明完整。
-5. 确定正式版本，再更新 `pyproject.toml`、`rer/__init__.py` 及相关版本文档。写发布说明，说明新能力、兼容性和已知限制，然后创建 tag / GitHub Release。
+5. 确定正式版本，再更新 `pyproject.toml`、`rer/__init__.py` 及相关版本文档。写发布说明（当前维护在 [`CHANGELOG.md`](../CHANGELOG.md)），说明新能力、兼容性和已知限制，然后创建 tag / GitHub Release。
 
 尚未完成的检查应如实保留，不应把历史快照重放或有限来源案例写成完整项目验收。发布 Skill 压缩包时保留完整 Skill 目录，并附项目许可证和适用的第三方说明。
 

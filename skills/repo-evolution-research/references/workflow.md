@@ -150,7 +150,7 @@ Agent 读取 `analysis/packs/*.md` 后写 `analysis/selection.json`。该文件�
 
 ## 快照兼容
 
-当前 `SCHEMA_VERSION=1.3`、`TOOL_VERSION=0.2.8`。每个快照在 manifest 记录 `schema_version`。新运行写 1.3；`init`/`collect` 只接受当前版本，旧 run 不能续跑 collect。校验器和 `prepare` 仅对 config/manifest/research/validation 的 1.2 结构做兼容读取；`pack-index` / `candidates` 的 schema 只接受 1.3，任何 1.2 版本标记都会被拒绝（即使字段齐全），必须先由当前版本 `prepare` 重建。在首次真实端到端验收前，快照是开发产物，不保证完全向后兼容。
+当前 `SCHEMA_VERSION=1.3`、`TOOL_VERSION=0.2.9`。每个快照在 manifest 记录 `schema_version`。新运行写 1.3；`init`/`collect` 只接受当前版本，旧 run 不能续跑 collect。校验器和 `prepare` 仅对 config/manifest/research/validation 的 1.2 结构做兼容读取；`pack-index` / `candidates` 的 schema 只接受 1.3，任何 1.2 版本标记都会被拒绝（即使字段齐全），必须先由当前版本 `prepare` 重建。在首次真实端到端验收前，快照是开发产物，不保证完全向后兼容。
 
 ### 只读升级诊断与副本恢复
 
