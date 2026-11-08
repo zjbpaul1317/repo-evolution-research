@@ -56,6 +56,26 @@ def http_response(
     return CommandResult(0 if status < 400 else 1, "\n".join(lines), "")
 
 
+def empty_http_response(
+    status: int,
+    headers: dict[str, str] | None = None,
+) -> CommandResult:
+    lines = [f"HTTP/2.0 {status} OK"]
+    for key, value in (headers or {}).items():
+        lines.append(f"{key}: {value}")
+    lines.append("")
+    return CommandResult(0, "\n".join(lines), "")
+
+
+def header_value(argv: list[str], name: str) -> str | None:
+    for index, token in enumerate(argv):
+        if token == "-H" and index + 1 < len(argv):
+            key, _, value = argv[index + 1].partition(":")
+            if key.lower() == name.lower():
+                return value.strip()
+    return None
+
+
 def make_client(
     tmp_path: Path,
     runner,
@@ -104,6 +124,78 @@ def test_rest_pagination_and_request_ledger(tmp_path: Path) -> None:
     assert {record["transport"] for record in requests} == {"rest"}
     assert all(record["status"] == 200 for record in requests)
     assert len(store.read_jsonl("raw/index.jsonl")) == 2
+
+
+def test_rest_cached_revalidates_with_etag(tmp_path: Path) -> None:
+    seen_conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        seen_conditions.append(header_value(argv, "If-None-Match"))
+        if len(seen_conditions) == 1:
+            return http_response(200, {"value": 1}, {"ETag": '"v1"'})
+        return empty_http_response(304, {"ETag": '"v1"'})
+
+    client, store, _ = make_client(tmp_path, runner)
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+
+    assert seen_conditions == [None, '"v1"']
+    requests = store.read_jsonl("requests.jsonl")
+    assert [record["status"] for record in requests] == [200, 304]
+    cache = store.read_json("cache/http-etag.json")
+    assert list(cache.values())[0]["etag"] == '"v1"'
+
+
+def test_rest_cached_refreshes_changed_etag(tmp_path: Path) -> None:
+    seen_conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        condition = header_value(argv, "If-None-Match")
+        seen_conditions.append(condition)
+        if condition is None:
+            return http_response(200, {"value": 1}, {"ETag": '"v1"'})
+        if condition == '"v1"':
+            return http_response(200, {"value": 2}, {"ETag": '"v2"'})
+        return empty_http_response(304, {"ETag": '"v2"'})
+
+    client, _store, _ = make_client(tmp_path, runner)
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    assert client.rest_cached("repos/o/r/value") == {"value": 2}
+    assert client.rest_cached("repos/o/r/value") == {"value": 2}
+    assert seen_conditions == [None, '"v1"', '"v2"']
+
+
+def test_rest_cached_without_etag_does_not_cache(tmp_path: Path) -> None:
+    seen_conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        seen_conditions.append(header_value(argv, "If-None-Match"))
+        return http_response(200, {"value": 1})
+
+    client, store, _ = make_client(tmp_path, runner)
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    assert seen_conditions == [None, None]
+    assert not store.secure_path("cache/http-etag.json").is_file()
+
+
+def test_rest_cached_missing_blob_falls_back_to_full_request(
+    tmp_path: Path,
+) -> None:
+    seen_conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        seen_conditions.append(header_value(argv, "If-None-Match"))
+        return http_response(200, {"value": 1}, {"ETag": '"v1"'})
+
+    client, store, _ = make_client(tmp_path, runner)
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    cache = store.read_json("cache/http-etag.json")
+    blob_sha = next(iter(cache.values()))["blob_sha256"]
+    store.remove_file(f"blobs/{blob_sha}")
+
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    assert seen_conditions == [None, None]
 
 
 def test_graphql_pagination(tmp_path: Path) -> None:

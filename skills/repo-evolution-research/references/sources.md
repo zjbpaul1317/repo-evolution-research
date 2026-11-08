@@ -7,6 +7,7 @@
 - 窗口是左闭右开 `[start, end)`；`end` 缺省为运行开始时刻。存储用 UTC，展示按配置时区。
 - 窗口成员使用各来源自己的时间键（活动视图不同、Release 用 `published_at`）。当前 API 返回的正文、标签和状态可能已在窗口结束后修改；默认报告说“研究 X–Y 期间活动，状态核对截至 Z”，不声称恢复了 Y 当天的完整状态。
 - 长文本一律写入 `blobs/`，权威文档只存 `text_ref`；不复制 GitHub 响应。
+- 可变单对象 REST GET（PR/Issue detail）使用 ETag 条件请求；304 复用 `cache/http-etag.json` 指向的本地 blob，缓存缺失或损坏时回退全量请求。缓存只影响传输成本，不进入 research ledger。
 - 可变材料在 collector 重建文档时每轮重读。只有绑定代码修订键且 section 完整的 `files` / `commits` 可以复用；selection 对 section 已完整且未请求补读的对象复用快照（`already_read`），不重新请求。
 - 窗口外材料可以作为背景或后续观察，但必须标明 `context` 或“后续观察”，不能计入窗口内活动。
 

@@ -865,7 +865,7 @@ def _read_issue(
     host, owner, name = _repository_parts(context.repository)
     base = f"repos/{owner}/{name}"
     try:
-        detail = client.rest(f"{base}/issues/{number}")
+        detail = client.rest_cached(f"{base}/issues/{number}")
     except GitHubNotFoundError as exc:
         raise ProposalNotFound(
             f"Issue #{number} 不存在或不可访问",

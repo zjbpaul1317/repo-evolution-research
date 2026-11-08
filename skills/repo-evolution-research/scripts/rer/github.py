@@ -23,6 +23,7 @@ from .errors import (
     GitHubNotFoundError,
     GitHubRateLimitError,
     GitHubUnavailableError,
+    StoreError,
     ToolError,
     UsageError,
 )
@@ -36,6 +37,7 @@ Runner = Callable[[list[str], str | None], "CommandResult"]
 _HTTP_STATUS_RE = re.compile(r"^HTTP/\S+\s+(\d{3})[^\n]*$", re.MULTILINE)
 _LINK_RE = re.compile(r'<([^>]+)>;\s*rel="([^"]+)"')
 _TOKEN_RE = re.compile(r"\b(?:gh[pous]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{20,})\b")
+_ETAG_CACHE_PATH = "cache/http-etag.json"
 _SENSITIVE_KEYS = {
     "access_token",
     "auth",
@@ -62,6 +64,7 @@ class HttpResponse:
     headers: dict[str, str]
     body: str
     request_id: str
+    blob_sha256: str | None = None
 
 
 @dataclass
@@ -354,6 +357,87 @@ class GitHubClient:
         response = self._rest_page(endpoint, params, page=1, headers=headers)
         return self._decode_json(response.body, endpoint)
 
+    def rest_cached(
+        self,
+        endpoint: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> Any:
+        """GET with ETag revalidation; 304 responses reuse the saved payload."""
+        cache = self._etag_cache()
+        key = _etag_cache_key(endpoint, params, headers)
+        entry = cache.get(key) if isinstance(cache.get(key), Mapping) else None
+        conditional = dict(headers or {})
+        cached_payload: bytes | None = None
+        if entry is not None:
+            etag = entry.get("etag")
+            blob_sha256 = entry.get("blob_sha256")
+            if isinstance(etag, str) and etag and isinstance(blob_sha256, str):
+                try:
+                    cached_payload = self.store.read_blob(blob_sha256)
+                except StoreError:
+                    cached_payload = None
+                if cached_payload is not None:
+                    conditional["If-None-Match"] = etag
+        response = self._rest_page(
+            endpoint,
+            params,
+            page=1,
+            headers=conditional,
+            allow_not_modified=True,
+        )
+        if response.status == 304:
+            if cached_payload is not None:
+                return self._decode_json(cached_payload.decode("utf-8"), endpoint)
+            response = self._rest_page(endpoint, params, page=1, headers=headers)
+            if response.status == 304:
+                raise GitHubError(
+                    "ETag 缓存命中但本地载荷缺失",
+                    source="github.etag",
+                    details={"endpoint": sanitize_url(endpoint)},
+                )
+        data = self._decode_json(response.body, endpoint)
+        etag = response.headers.get("etag")
+        if (
+            response.status == 200
+            and isinstance(etag, str)
+            and etag
+            and isinstance(response.blob_sha256, str)
+        ):
+            cache[key] = {
+                "etag": etag,
+                "blob_sha256": response.blob_sha256,
+                "observed_at": to_iso_z(self.now()),
+            }
+            self._save_etag_cache(cache)
+        elif response.status == 200 and key in cache:
+            cache.pop(key, None)
+            self._save_etag_cache(cache)
+        return data
+
+    def _etag_cache(self) -> dict[str, dict[str, Any]]:
+        path = self.store.secure_path(_ETAG_CACHE_PATH)
+        if not path.is_file():
+            return {}
+        try:
+            value = self.store.read_json(_ETAG_CACHE_PATH)
+        except StoreError:
+            return {}
+        if not isinstance(value, Mapping):
+            return {}
+        return {
+            str(key): dict(item)
+            for key, item in value.items()
+            if isinstance(item, Mapping)
+        }
+
+    def _save_etag_cache(self, cache: Mapping[str, Any]) -> None:
+        try:
+            self.store.write_json(_ETAG_CACHE_PATH, dict(cache))
+        except StoreError:
+            pass
+
     def rest_text(
         self,
         endpoint: str,
@@ -497,6 +581,7 @@ class GitHubClient:
         *,
         page: int,
         headers: Mapping[str, str] | None = None,
+        allow_not_modified: bool = False,
     ) -> HttpResponse:
         reject_sensitive_params(params, source="github.params")
         argv = [self.gh_path, "api", "--method", "GET", "--include", endpoint]
@@ -514,6 +599,7 @@ class GitHubClient:
             params=params or {},
             page=page,
             argv=argv,
+            allow_not_modified=allow_not_modified,
         )
 
     def _execute(
@@ -526,6 +612,7 @@ class GitHubClient:
         argv: list[str],
         input_text: str | None = None,
         audit_extra: Mapping[str, Any] | None = None,
+        allow_not_modified: bool = False,
     ) -> HttpResponse:
         attempts = 0
         logical_request_id = self._next_request_id()
@@ -628,8 +715,10 @@ class GitHubClient:
                     source="github.transport",
                     details={"request_id": request_id, "message": redact_secrets(body[:300])},
                 )
+            if status == 304 and allow_not_modified:
+                return HttpResponse(status, headers, body, request_id, blob_sha)
             if 200 <= status < 300:
-                return HttpResponse(status, headers, body, request_id)
+                return HttpResponse(status, headers, body, request_id, blob_sha)
             if status == 429 or (status == 403 and self._is_rate_limited(headers, body)):
                 wait = self._rate_limit_wait(headers)
                 if attempts < self.max_attempts and wait <= self.max_rate_wait:
@@ -836,6 +925,23 @@ class GitHubClient:
                 source="github.rest",
                 details={"endpoint": sanitize_url(endpoint)},
             ) from exc
+
+
+def _etag_cache_key(
+    endpoint: str,
+    params: Mapping[str, Any] | None,
+    headers: Mapping[str, str] | None,
+) -> str:
+    material = json.dumps(
+        {
+            "endpoint": endpoint,
+            "params": {str(key): params[key] for key in sorted(params or {})},
+            "headers": {str(key).lower(): headers[key] for key in sorted(headers or {})},
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 def _gh_value(value: Any) -> str:

@@ -328,7 +328,7 @@ def _read_pr(
 ) -> _Read:
     base = f"repos/{owner}/{name}"
     pages = 0
-    detail = client.rest(f"{base}/pulls/{number}")
+    detail = client.rest_cached(f"{base}/pulls/{number}")
     pages += 1
     if not isinstance(detail, Mapping):
         raise GitHubError(
@@ -622,7 +622,7 @@ def _confirm_head(
     number: int,
 ) -> str | None:
     try:
-        detail = client.rest(f"repos/{owner}/{name}/pulls/{number}")
+        detail = client.rest_cached(f"repos/{owner}/{name}/pulls/{number}")
     except FATAL_ERRORS:
         raise
     except GitHubError:
