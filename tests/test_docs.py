@@ -217,7 +217,7 @@ def test_document_history_limit_is_visible(tmp_path: Path) -> None:
                             },
                         },
                     }
-                    for index in range(HISTORY_CAP)
+                    for index in range(HISTORY_CAP + 1)
                 ],
             )
         return http_response(404, {"message": "unhandled"})
@@ -232,11 +232,50 @@ def test_document_history_limit_is_visible(tmp_path: Path) -> None:
     document = load_doc_snapshots(store)[0]
     assert document["history"]["status"] == "partial"
     assert document["history"]["truncated"] is True
+    assert document["history"]["fetched"] == HISTORY_CAP
     assert (
         document["history"]["truncation_reason"]
         == f"history_limit_{HISTORY_CAP}"
     )
     assert "doc_history_truncated" in document["limitations"]
+
+
+def test_document_history_exactly_cap_is_not_truncated(tmp_path: Path) -> None:
+    def handler(endpoint: str, input_text: str) -> CommandResult:
+        if endpoint == "repos/acme/demo/contents/docs/design.md":
+            return http_response(200, content_body("docs/design.md", "hello world"))
+        if endpoint == "repos/acme/demo/commits":
+            return http_response(
+                200,
+                [
+                    {
+                        "sha": f"{index:040x}",
+                        "html_url": f"https://github.com/acme/demo/commit/{index}",
+                        "commit": {
+                            "message": f"Change {index}",
+                            "author": {
+                                "name": "Alice",
+                                "date": "2026-10-20T10:00:00Z",
+                            },
+                        },
+                    }
+                    for index in range(HISTORY_CAP)
+                ],
+            )
+        return http_response(404, {"message": "unhandled"})
+
+    store, client = make_client(tmp_path, handler)
+    collect_documents(
+        context_for(client, store, lambda: "2026-11-01T08:00:10Z"),
+        source_profile=source_profile(design=["docs/design.md"]),
+        revision=REVISION,
+    )
+
+    document = load_doc_snapshots(store)[0]
+    assert document["history"]["status"] == "complete"
+    assert document["history"]["truncated"] is False
+    assert document["history"]["fetched"] == HISTORY_CAP
+    assert "doc_history_truncated" not in document["limitations"]
 
 
 def test_history_targets_prioritize_design_like_paths() -> None:

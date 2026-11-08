@@ -373,7 +373,7 @@ def _read_history(
     try:
         data = context.client.rest(
             f"repos/{owner}/{name}/commits",
-            params={"path": path, "sha": revision, "per_page": HISTORY_CAP},
+            params={"path": path, "sha": revision, "per_page": HISTORY_CAP + 1},
         )
     except BudgetExceededError as exc:
         if is_run_budget_error(exc):
@@ -409,7 +409,8 @@ def _read_history(
             }
         )
     counts["history_read"] += 1
-    truncated = len(items) >= HISTORY_CAP
+    truncated = len(items) > HISTORY_CAP
+    items = items[:HISTORY_CAP]
     return _history_section(
         "partial" if truncated else "complete",
         len(items),
