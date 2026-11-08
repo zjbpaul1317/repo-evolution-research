@@ -72,6 +72,17 @@ def http_response(
     return CommandResult(0 if status < 400 else 1, "\n".join(lines), "")
 
 
+def empty_http_response(
+    status: int,
+    headers: dict[str, str] | None = None,
+) -> CommandResult:
+    lines = [f"HTTP/2.0 {status} OK"]
+    for key, value in (headers or {}).items():
+        lines.append(f"{key}: {value}")
+    lines.append("")
+    return CommandResult(0, "\n".join(lines), "")
+
+
 def parse_params(argv: list[str]) -> dict[str, str]:
     params: dict[str, str] = {}
     for index, value in enumerate(argv):
@@ -1507,6 +1518,53 @@ def test_resume_refreshes_mutable_state_without_head_change(tmp_path: Path) -> N
     assert second["body"]["sha256"] is not None
     assert store.read_blob(second["body"]["sha256"]) == new_body.encode()
     assert second["observed_at"] == "2026-11-01T08:00:20Z"
+
+
+def test_resume_revalidates_pr_detail_with_etag(tmp_path: Path) -> None:
+    conditions: list[str | None] = []
+    base = default_handler()
+
+    def handler(
+        endpoint: str,
+        params: dict[str, str],
+        headers: dict[str, str],
+    ) -> CommandResult:
+        if endpoint == "repos/acme/demo/pulls/10":
+            condition = headers.get("If-None-Match")
+            conditions.append(condition)
+            if condition is None:
+                return http_response(
+                    200,
+                    detail_body(10),
+                    {"ETag": '"detail-v1"'},
+                )
+            return empty_http_response(304, {"ETag": '"detail-v1"'})
+        return base(endpoint, params, headers)
+
+    store, client = make_client(tmp_path, handler)
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+    conditions.clear()
+
+    client2 = build_client(store, handler)
+    result = collect_pull_requests(
+        client2,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:20Z",
+    )
+
+    assert conditions
+    assert all(condition == '"detail-v1"' for condition in conditions)
+    assert result.counts["skipped_unchanged"] == 1
+    assert result.counts["details_written"] == 0
 
 
 def test_resume_refreshes_review_thread_resolution_without_head_change(
