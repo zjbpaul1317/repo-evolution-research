@@ -36,6 +36,17 @@ def commit(sha: str) -> dict[str, Any]:
     )
 
 
+def pull_request(number: int) -> dict[str, Any]:
+    return make_entity(
+        entity_id=entity_id(HOST, OWNER, NAME, "pull_request", str(number)),
+        kind="pull_request",
+        title=f"#{number}",
+        url=f"https://github.com/{OWNER}/{NAME}/pull/{number}",
+        observed_at=NOW,
+        number=number,
+    )
+
+
 def source(
     text: str,
     *,
@@ -375,6 +386,26 @@ def test_revert_pr_reference_becomes_reverts_relation() -> None:
     assert relations[0]["to_id"] == entity_id(HOST, OWNER, NAME, "pull_request", "9")
 
 
+def test_revert_records_multiple_adjacent_references() -> None:
+    relations, external, _counts = run(
+        "Reverts #9, #10 and #11.",
+        index=NormalizeIndex.build(
+            [pull_request(9), pull_request(10), pull_request(11)]
+        ),
+    )
+
+    assert external == {}
+    assert {
+        relation["to_id"]
+        for relation in relations
+        if relation["type"] == "reverts"
+    } == {
+        entity_id(HOST, OWNER, NAME, "pull_request", "9"),
+        entity_id(HOST, OWNER, NAME, "pull_request", "10"),
+        entity_id(HOST, OWNER, NAME, "pull_request", "11"),
+    }
+
+
 def test_revert_to_issue_is_not_a_revert_target() -> None:
     relations, _external, counts = run(
         "Reverts #12.",
@@ -427,6 +458,23 @@ def test_cherry_picked_from_commit_becomes_backports_relation() -> None:
     assert len(relations) == 1
     assert relations[0]["type"] == "backports"
     assert relations[0]["to_id"] == entity_id(HOST, OWNER, NAME, "commit", sha)
+
+
+def test_backport_records_multiple_adjacent_references() -> None:
+    relations, external, _counts = run(
+        "Backports #9 and #10.",
+        index=NormalizeIndex.build([pull_request(9), pull_request(10)]),
+    )
+
+    assert external == {}
+    assert {
+        relation["to_id"]
+        for relation in relations
+        if relation["type"] == "backports"
+    } == {
+        entity_id(HOST, OWNER, NAME, "pull_request", "9"),
+        entity_id(HOST, OWNER, NAME, "pull_request", "10"),
+    }
 
 
 def test_backport_to_issue_is_not_a_backport_target() -> None:

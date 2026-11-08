@@ -613,34 +613,34 @@ def _sha_refs(text: str) -> list[Reference]:
 
 
 def _revert_refs(text: str) -> list[Reference]:
-    refs: list[Reference] = []
-    limit = len(text)
-    for match in _REVERT_RE.finditer(text):
-        position = match.end()
-        commit_prefix = _REVERT_COMMIT_RE.match(text, position)
-        if commit_prefix is not None:
-            position = commit_prefix.end()
-        else:
-            position = _skip_closing_separators(text, position, limit)
-        ref = _match_ref_at(text, position, limit)
-        if ref is not None:
-            refs.append(ref)
-    return refs
+    return _keyword_refs(text, _REVERT_RE, _REVERT_COMMIT_RE)
 
 
 def _backport_refs(text: str) -> list[Reference]:
+    return _keyword_refs(text, _BACKPORT_RE, _BACKPORT_COMMIT_RE)
+
+
+def _keyword_refs(
+    text: str,
+    keyword_pattern: re.Pattern[str],
+    commit_pattern: re.Pattern[str],
+) -> list[Reference]:
     refs: list[Reference] = []
-    limit = len(text)
-    for match in _BACKPORT_RE.finditer(text):
+    for match in keyword_pattern.finditer(text):
+        line_end = text.find("\n", match.end())
+        if line_end < 0:
+            line_end = len(text)
         position = match.end()
-        commit_prefix = _BACKPORT_COMMIT_RE.match(text, position)
+        commit_prefix = commit_pattern.match(text, position)
         if commit_prefix is not None:
             position = commit_prefix.end()
-        else:
-            position = _skip_closing_separators(text, position, limit)
-        ref = _match_ref_at(text, position, limit)
-        if ref is not None:
+        while True:
+            position = _skip_closing_separators(text, position, line_end)
+            ref = _match_ref_at(text, position, line_end)
+            if ref is None:
+                break
             refs.append(ref)
+            position = ref.end
     return refs
 
 
