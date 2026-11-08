@@ -42,7 +42,7 @@
 
 - 从活动候选中按 `min(max_deep_prs, max_deep_entities) - agent_pr_reserve` 选择初始深读 PR：quick 6 / standard 18 / deep 36；Agent selection 可继续使用预留名额，最多到 `min(max_deep_prs, max_deep_entities)`。standard 初始约 11 个 merged + 7 个 open。所有决策写入 `analysis/pr-selection.json`。
 - 每个选中 PR 读取 detail、files、commits、issue comments、reviews、review comments，并通过 GraphQL 读取 review thread 的 `isResolved` / `isOutdated` / 关联 comment databaseId，写一份权威文档 `raw/pr-details/<number>.json`。长文本和 patch 进 `blobs/`；entity 的 `raw_state.deep_read` 只存 `detail_path`、`head_sha`、`observed_at` 指针。
-- `review_threads` 只保存线程元数据和 comment ID，评论正文仍在 `review_comments`；GraphQL 失败或权限不足时 section 记 `unavailable` / `partial`，不伪造 `isResolved=false`。线程可随 review 操作变化，因此每次重建 PR 文档都重读，不复用旧 section。阅读包只展示 status/fetched/resolved/unresolved/outdated 统计，完整线程通过 raw refs 展开。
+- `review_threads` 只保存线程元数据和 comment ID，评论正文仍在 `review_comments`；GraphQL 失败或权限不足时 section 记 `unavailable` / `partial`，不伪造 `isResolved=false`。线程内评论超过 100 条时用 `node(id)` 继续分页，单线程最多 10 页、单 PR 最多 20 次后续请求；触顶、cursor 缺失或 GraphQL 错误时保留已取 ID，并记 `review_threads_comments_budget_capped` / `review_threads_comments_cursor_missing` / `review_threads_comments_graphql_errors` / `review_threads_comments_truncated`。线程可随 review 操作变化，因此每次重建 PR 文档都重读，不复用旧 section。阅读包只展示 status/fetched/resolved/unresolved/outdated 统计，完整线程通过 raw refs 展开。
 - `head.sha` 在读取开始和结束之间变化时置 `head_changed`，PR 标 `partial`；不能当作一次一致观察。`squash_rebase_unverified` 表示未重建最终合并补丁。
 - 当前版本不抓完整 diff：`pr_detail.diff.status` 恒为 `not_requested`，schema 字段保留给未来选项。
 - `files` 上限 3000、`commits` 上限 250；二进制或超大文件可能没有 patch。这些是固有缺口，记录在 coverage/limitations，但 `pr_detail` 只在 `unavailable` 时阻塞运行。

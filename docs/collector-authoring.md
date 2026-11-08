@@ -63,7 +63,7 @@ def collect_issue_comments(
 
 ## 3. 用 `SectionSpec` 声明 section
 
-`SectionSpec` / `fetch_section()` 只覆盖 **REST list section**，底层是 `client.iter_rest_pages`。GraphQL、Discussion 深读、PR review thread、多载体 RFC 等非 REST 场景需要单独 adapter；它们复用 `CollectContext`、`text_ref`、状态/coverage 契约和 section 级分层，但不能硬套 `fetch_section()`。现有例子：`collectors/review_threads.py` 用 GraphQL 读取线程 resolution，评论正文仍留在 REST `review_comments`；`collectors/docs.py` 用有界 REST 列表读取设计文档历史。
+`SectionSpec` / `fetch_section()` 只覆盖 **REST list section**，底层是 `client.iter_rest_pages`。GraphQL、Discussion 深读、PR review thread、多载体 RFC 等非 REST 场景需要单独 adapter；它们复用 `CollectContext`、`text_ref`、状态/coverage 契约和 section 级分层，但不能硬套 `fetch_section()`。现有例子：`collectors/review_threads.py` 用 GraphQL 读取线程 resolution，并对单线程评论做有界嵌套分页（单线程 10 页、单 PR 20 次后续请求），评论正文仍留在 REST `review_comments`；`collectors/docs.py` 用有界 REST 列表读取设计文档历史。
 
 `SectionSpec` 是 section 级声明，不是流程引擎：
 

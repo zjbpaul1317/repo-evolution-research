@@ -143,7 +143,7 @@ The [vLLM KV correctness case](evals/cases/vllm-20261104-kv-correctness/notes.md
 
 - Reports are fixed to Chinese. `--language` and `--compare-previous` are reserved; multilingual reports and window comparisons are not implemented.
 - File lists and patch excerpts may be truncated. Full diffs are not collected. The tool does not execute target-project tests or independently reproduce deployment or benchmark claims.
-- Review thread resolution uses GraphQL and can be partial or unavailable. Review thread comments are capped at 100 per thread; longer threads are marked truncated. Document history is bounded (15 documents × 20 commits). Revert and backport chains are detected only from explicit text references, not labels or branch-name heuristics.
+- Review thread resolution uses GraphQL and can be partial or unavailable. Review thread comments use bounded nested pagination; extremely long threads may still be capped and marked truncated. Document history is bounded (15 documents × 20 commits). Revert and backport chains are detected only from explicit text references, not labels or branch-name heuristics.
 - ETag revalidation covers mutable single-object REST GETs (PR/Issue detail) only; paginated REST lists are re-fetched in full.
 - Merged changes, release evidence, and availability are separate. Release-note mentions do not automatically prove delivery.
 - Permissions, pagination, rate limits, and budgets can leave partial coverage. Inspect exit code `4` and the recorded gaps before continuing.

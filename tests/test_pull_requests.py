@@ -10,6 +10,7 @@ import pytest
 
 from rer import cli
 from rer.collectors import pull_requests as pr_module
+from rer.collectors import review_threads as review_threads_module
 from rer.collectors.entity_store import detail_path
 from rer.collectors.pr_store import load_pr_document
 from rer.collectors.progress import CollectProgress, has_blocking_gaps
@@ -290,6 +291,75 @@ def empty_review_threads_response() -> CommandResult:
                             "pageInfo": {"hasNextPage": False, "endCursor": None},
                             "nodes": [],
                         }
+                    }
+                }
+            }
+        },
+    )
+
+
+def review_threads_response(
+    nodes: list[dict[str, Any]],
+    *,
+    total: int | None = None,
+) -> CommandResult:
+    return http_response(
+        200,
+        {
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": {
+                            "totalCount": len(nodes) if total is None else total,
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            "nodes": nodes,
+                        }
+                    }
+                }
+            }
+        },
+    )
+
+
+def review_thread_node(
+    thread_id: str,
+    comment_ids: list[int],
+    *,
+    total: int | None = None,
+    has_next: bool = False,
+    cursor: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": thread_id,
+        "isResolved": False,
+        "isOutdated": False,
+        "path": "src/cache.py",
+        "line": 42,
+        "startLine": None,
+        "comments": {
+            "totalCount": len(comment_ids) if total is None else total,
+            "pageInfo": {"hasNextPage": has_next, "endCursor": cursor},
+            "nodes": [{"databaseId": value} for value in comment_ids],
+        },
+    }
+
+
+def review_comment_page_response(
+    comment_ids: list[int],
+    *,
+    total: int,
+    has_next: bool,
+    cursor: str | None,
+) -> CommandResult:
+    return http_response(
+        200,
+        {
+            "data": {
+                "node": {
+                    "comments": {
+                        "totalCount": total,
+                        "pageInfo": {"hasNextPage": has_next, "endCursor": cursor},
+                        "nodes": [{"databaseId": value} for value in comment_ids],
                     }
                 }
             }
@@ -619,6 +689,346 @@ def test_review_threads_total_count_truncation_is_visible(tmp_path: Path) -> Non
         == "review_threads_truncated"
     )
     assert "review_threads_truncated" in document["limitations"]
+
+
+def test_review_threads_paginate_long_comment_thread(tmp_path: Path) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        payload = json.loads(input_text or "{}")
+        variables = payload.get("variables", {})
+        calls.append(variables)
+        if "threadId" not in variables:
+            return review_threads_response(
+                [
+                    review_thread_node(
+                        "PRRT_1",
+                        list(range(1, 101)),
+                        total=250,
+                        has_next=True,
+                        cursor="cursor-1",
+                    )
+                ]
+            )
+        cursor = variables.get("cursor")
+        if cursor == "cursor-1":
+            return review_comment_page_response(
+                list(range(101, 201)),
+                total=250,
+                has_next=True,
+                cursor="cursor-2",
+            )
+        if cursor == "cursor-2":
+            return review_comment_page_response(
+                list(range(201, 251)),
+                total=250,
+                has_next=False,
+                cursor=None,
+            )
+        raise AssertionError(f"unexpected cursor {cursor!r}")
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+
+    document = load_pr_document(store, 10)
+    assert document is not None
+    threads = document["review_threads"]
+    assert threads["status"] == "complete"
+    assert threads["truncated"] is False
+    assert threads["truncation_reason"] is None
+    thread = threads["items"][0]
+    assert thread["comment_ids"] == list(range(1, 251))
+    assert thread["comments_total"] == 250
+    assert thread["comments_truncated"] is False
+    assert len(calls) == 3
+    assert calls[1]["threadId"] == "PRRT_1"
+    assert calls[1]["cursor"] == "cursor-1"
+
+
+def test_review_threads_short_thread_does_not_request_comment_pages(
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        payload = json.loads(input_text or "{}")
+        calls.append(payload.get("variables", {}))
+        return review_threads_response(
+            [review_thread_node("PRRT_1", [1, 2], total=2)]
+        )
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+
+    document = load_pr_document(store, 10)
+    assert document is not None
+    threads = document["review_threads"]
+    assert threads["status"] == "complete"
+    assert threads["items"][0]["comment_ids"] == [1, 2]
+    assert threads["items"][0]["comments_truncated"] is False
+    assert len(calls) == 1
+
+
+def test_review_threads_comment_page_errors_are_partial(tmp_path: Path) -> None:
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        payload = json.loads(input_text or "{}")
+        variables = payload.get("variables", {})
+        if "threadId" not in variables:
+            return review_threads_response(
+                [
+                    review_thread_node(
+                        "PRRT_1",
+                        list(range(1, 101)),
+                        total=150,
+                        has_next=True,
+                        cursor="cursor-1",
+                    )
+                ]
+            )
+        return http_response(
+            200,
+            {"data": {}, "errors": [{"message": "comment page failed"}]},
+        )
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+
+    document = load_pr_document(store, 10)
+    assert document is not None
+    threads = document["review_threads"]
+    assert threads["status"] == "partial"
+    assert threads["truncated"] is True
+    assert "review_threads_comments_graphql_errors" in threads["truncation_reason"]
+    assert "review_threads_comments_truncated" in threads["truncation_reason"]
+    thread = threads["items"][0]
+    assert len(thread["comment_ids"]) == 100
+    assert thread["comments_truncated"] is True
+    assert "review_threads_truncated" in document["limitations"]
+
+
+def test_review_threads_comment_pagination_cap_is_visible(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(review_threads_module, "MAX_THREAD_COMMENT_REQUESTS", 2)
+    calls: list[dict[str, Any]] = []
+
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        payload = json.loads(input_text or "{}")
+        variables = payload.get("variables", {})
+        calls.append(variables)
+        if "threadId" not in variables:
+            return review_threads_response(
+                [
+                    review_thread_node(
+                        "PRRT_1",
+                        list(range(1, 101)),
+                        total=1000,
+                        has_next=True,
+                        cursor="c1",
+                    )
+                ]
+            )
+        cursor = str(variables.get("cursor"))
+        page_number = int(cursor.removeprefix("c"))
+        start = page_number * 100 + 1
+        return review_comment_page_response(
+            list(range(start, start + 100)),
+            total=1000,
+            has_next=True,
+            cursor=f"c{page_number + 1}",
+        )
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+
+    document = load_pr_document(store, 10)
+    assert document is not None
+    threads = document["review_threads"]
+    assert threads["status"] == "partial"
+    assert "review_threads_comments_budget_capped" in threads["truncation_reason"]
+    assert "review_threads_comments_truncated" in threads["truncation_reason"]
+    thread = threads["items"][0]
+    assert len(thread["comment_ids"]) == 300
+    assert thread["comments_truncated"] is True
+    assert len(calls) == 3
+
+
+def test_review_threads_comment_cursor_missing_is_partial(tmp_path: Path) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        payload = json.loads(input_text or "{}")
+        calls.append(payload.get("variables", {}))
+        return review_threads_response(
+            [
+                review_thread_node(
+                    "PRRT_1",
+                    list(range(1, 101)),
+                    total=150,
+                    has_next=True,
+                    cursor=None,
+                )
+            ]
+        )
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+
+    document = load_pr_document(store, 10)
+    assert document is not None
+    threads = document["review_threads"]
+    assert threads["status"] == "partial"
+    assert "review_threads_comments_cursor_missing" in threads["truncation_reason"]
+    assert "review_threads_comments_truncated" in threads["truncation_reason"]
+    assert threads["items"][0]["comments_truncated"] is True
+    assert len(calls) == 1
+
+
+def test_review_threads_comment_connection_missing_is_partial(
+    tmp_path: Path,
+) -> None:
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        payload = json.loads(input_text or "{}")
+        variables = payload.get("variables", {})
+        if "threadId" not in variables:
+            return review_threads_response(
+                [
+                    review_thread_node(
+                        "PRRT_1",
+                        list(range(1, 101)),
+                        total=150,
+                        has_next=True,
+                        cursor="cursor-1",
+                    )
+                ]
+            )
+        return http_response(200, {"data": {"node": None}})
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+
+    document = load_pr_document(store, 10)
+    assert document is not None
+    threads = document["review_threads"]
+    assert threads["status"] == "partial"
+    assert (
+        "review_threads_comments_connection_missing"
+        in threads["truncation_reason"]
+    )
+    assert threads["items"][0]["comments_truncated"] is True
+
+
+def test_review_threads_comment_pages_dedupe_ids(tmp_path: Path) -> None:
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        payload = json.loads(input_text or "{}")
+        variables = payload.get("variables", {})
+        if "threadId" not in variables:
+            return review_threads_response(
+                [
+                    review_thread_node(
+                        "PRRT_1",
+                        list(range(1, 101)),
+                        total=150,
+                        has_next=True,
+                        cursor="cursor-1",
+                    )
+                ]
+            )
+        return review_comment_page_response(
+            [*range(1, 51), *range(101, 151)],
+            total=150,
+            has_next=False,
+            cursor=None,
+        )
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+
+    document = load_pr_document(store, 10)
+    assert document is not None
+    threads = document["review_threads"]
+    assert threads["status"] == "complete"
+    thread = threads["items"][0]
+    assert thread["comment_ids"] == list(range(1, 151))
+    assert thread["comments_truncated"] is False
 
 
 def test_default_quota_covers_all_candidates(tmp_path: Path) -> None:
