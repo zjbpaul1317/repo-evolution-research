@@ -365,11 +365,30 @@ class GitHubClient:
         headers: Mapping[str, str] | None = None,
     ) -> Any:
         """GET with ETag revalidation; 304 responses reuse the saved payload."""
+        return self._cached_rest_page(
+            endpoint,
+            params,
+            page=1,
+            headers=headers,
+            pagination=False,
+        ).data
+
+    def _cached_rest_page(
+        self,
+        endpoint: str,
+        params: Mapping[str, Any] | None,
+        *,
+        page: int,
+        headers: Mapping[str, str] | None = None,
+        pagination: bool,
+    ) -> RestPage:
         cache = self._etag_cache()
-        key = _etag_cache_key(endpoint, params, headers)
+        key = _etag_cache_key(endpoint, params, headers, page=page)
         entry = cache.get(key) if isinstance(cache.get(key), Mapping) else None
         conditional = dict(headers or {})
         cached_payload: bytes | None = None
+        cached_link: str | None = None
+        cached_has_next: bool | None = None
         if entry is not None:
             etag = entry.get("etag")
             blob_sha256 = entry.get("blob_sha256")
@@ -380,17 +399,59 @@ class GitHubClient:
                     cached_payload = None
                 if cached_payload is not None:
                     conditional["If-None-Match"] = etag
+                    link = entry.get("link")
+                    if isinstance(link, str) and link:
+                        cached_link = link
+                    has_next = entry.get("has_next")
+                    if isinstance(has_next, bool):
+                        cached_has_next = has_next
         response = self._rest_page(
             endpoint,
             params,
-            page=1,
+            page=page,
             headers=conditional,
             allow_not_modified=True,
         )
         if response.status == 304:
-            if cached_payload is not None:
-                return self._decode_json(cached_payload.decode("utf-8"), endpoint)
-            response = self._rest_page(endpoint, params, page=1, headers=headers)
+            reuse = cached_payload is not None and self._can_reuse_cached_page(
+                response,
+                pagination=pagination,
+                cached_link=cached_link,
+                cached_has_next=cached_has_next,
+            )
+            if reuse:
+                try:
+                    data = self._decode_json(
+                        (cached_payload or b"").decode("utf-8"),
+                        endpoint,
+                    )
+                except (UnicodeDecodeError, GitHubError):
+                    reuse = False
+                else:
+                    response_headers = dict(response.headers)
+                    if not response_headers.get("link") and cached_link:
+                        response_headers["link"] = cached_link
+                    self._touch_etag_entry(
+                        cache,
+                        key,
+                        response,
+                        cached_link=cached_link,
+                        cached_has_next=cached_has_next,
+                    )
+                    self._save_etag_cache(cache)
+                    return RestPage(
+                        data=data,
+                        status=304,
+                        headers=response_headers,
+                        request_id=response.request_id,
+                        page=page,
+                    )
+            response = self._rest_page(
+                endpoint,
+                params,
+                page=page,
+                headers=headers,
+            )
             if response.status == 304:
                 raise GitHubError(
                     "ETag 缓存命中但本地载荷缺失",
@@ -398,6 +459,63 @@ class GitHubClient:
                     details={"endpoint": sanitize_url(endpoint)},
                 )
         data = self._decode_json(response.body, endpoint)
+        self._remember_etag(cache, key, response)
+        return RestPage(
+            data=data,
+            status=response.status or 0,
+            headers=response.headers,
+            request_id=response.request_id,
+            page=page,
+        )
+
+    @staticmethod
+    def _can_reuse_cached_page(
+        response: HttpResponse,
+        *,
+        pagination: bool,
+        cached_link: str | None,
+        cached_has_next: bool | None,
+    ) -> bool:
+        if not pagination:
+            return True
+        if response.headers.get("link"):
+            return True
+        if cached_has_next is False:
+            return True
+        return bool(cached_link)
+
+    def _touch_etag_entry(
+        self,
+        cache: dict[str, dict[str, Any]],
+        key: str,
+        response: HttpResponse,
+        *,
+        cached_link: str | None,
+        cached_has_next: bool | None,
+    ) -> None:
+        entry = cache.get(key)
+        if not isinstance(entry, dict):
+            return
+        entry["validated_at"] = to_iso_z(self.now())
+        etag = response.headers.get("etag")
+        if isinstance(etag, str) and etag:
+            entry["etag"] = etag
+        link = response.headers.get("link")
+        if link:
+            entry["link"] = link
+            entry["has_next"] = bool(parse_link_header(link).get("next"))
+        else:
+            if "link" not in entry and cached_link:
+                entry["link"] = cached_link
+            if "has_next" not in entry:
+                entry["has_next"] = cached_has_next
+
+    def _remember_etag(
+        self,
+        cache: dict[str, dict[str, Any]],
+        key: str,
+        response: HttpResponse,
+    ) -> None:
         etag = response.headers.get("etag")
         if (
             response.status == 200
@@ -405,16 +523,21 @@ class GitHubClient:
             and etag
             and isinstance(response.blob_sha256, str)
         ):
+            now = to_iso_z(self.now())
+            link = response.headers.get("link")
             cache[key] = {
                 "etag": etag,
                 "blob_sha256": response.blob_sha256,
-                "observed_at": to_iso_z(self.now()),
+                "link": link,
+                "has_next": bool(parse_link_header(link).get("next")),
+                "fetched_at": now,
+                "validated_at": now,
+                "observed_at": now,
             }
             self._save_etag_cache(cache)
         elif response.status == 200 and key in cache:
             cache.pop(key, None)
             self._save_etag_cache(cache)
-        return data
 
     def _etag_cache(self) -> dict[str, dict[str, Any]]:
         path = self.store.secure_path(_ETAG_CACHE_PATH)
@@ -434,7 +557,7 @@ class GitHubClient:
 
     def _save_etag_cache(self, cache: Mapping[str, Any]) -> None:
         try:
-            self.store.write_json(_ETAG_CACHE_PATH, dict(cache))
+            self.store.write_json(_ETAG_CACHE_PATH, _prune_etag_cache(cache))
         except StoreError:
             pass
 
@@ -459,16 +582,14 @@ class GitHubClient:
         query = dict(params or {})
         page = 1
         while True:
-            response = self._rest_page(url, query, page=page)
-            data = self._decode_json(response.body, url)
-            yield RestPage(
-                data=data,
-                status=response.status or 0,
-                headers=response.headers,
-                request_id=response.request_id,
+            result = self._cached_rest_page(
+                url,
+                query,
                 page=page,
+                pagination=True,
             )
-            next_url = parse_link_header(response.headers.get("link")).get("next")
+            yield result
+            next_url = parse_link_header(result.headers.get("link")).get("next")
             if not next_url:
                 return
             validate_next_url(next_url)
@@ -927,21 +1048,43 @@ class GitHubClient:
             ) from exc
 
 
+_MAX_ETAG_ENTRIES = 2000
+
+
 def _etag_cache_key(
     endpoint: str,
     params: Mapping[str, Any] | None,
     headers: Mapping[str, str] | None,
+    *,
+    page: int = 1,
 ) -> str:
     material = json.dumps(
         {
             "endpoint": endpoint,
             "params": {str(key): params[key] for key in sorted(params or {})},
             "headers": {str(key).lower(): headers[key] for key in sorted(headers or {})},
+            "page": page,
         },
         ensure_ascii=False,
         sort_keys=True,
     )
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _prune_etag_cache(
+    cache: Mapping[str, Mapping[str, Any]],
+    limit: int = _MAX_ETAG_ENTRIES,
+) -> dict[str, dict[str, Any]]:
+    entries = {str(key): dict(value) for key, value in cache.items()}
+    if len(entries) <= limit:
+        return entries
+
+    def sort_key(item: tuple[str, Mapping[str, Any]]) -> str:
+        value = item[1]
+        return str(value.get("validated_at") or value.get("observed_at") or "")
+
+    ordered = sorted(entries.items(), key=sort_key)
+    return dict(ordered[-limit:])
 
 
 def _gh_value(value: Any) -> str:

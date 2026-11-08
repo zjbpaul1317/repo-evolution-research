@@ -21,6 +21,7 @@ from rer.errors import (
 from rer.github import (
     CommandResult,
     GitHubClient,
+    _prune_etag_cache,
     default_runner,
     parse_include_output,
     probe_repository,
@@ -137,13 +138,17 @@ def test_rest_cached_revalidates_with_etag(tmp_path: Path) -> None:
 
     client, store, _ = make_client(tmp_path, runner)
     assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    client.now = lambda: datetime(2026, 11, 1, 9, 0, 0, tzinfo=UTC)
     assert client.rest_cached("repos/o/r/value") == {"value": 1}
 
     assert seen_conditions == [None, '"v1"']
     requests = store.read_jsonl("requests.jsonl")
     assert [record["status"] for record in requests] == [200, 304]
     cache = store.read_json("cache/http-etag.json")
-    assert list(cache.values())[0]["etag"] == '"v1"'
+    entry = next(iter(cache.values()))
+    assert entry["etag"] == '"v1"'
+    assert entry["fetched_at"] == "2026-11-01T08:00:00Z"
+    assert entry["validated_at"] == "2026-11-01T09:00:00Z"
 
 
 def test_rest_cached_refreshes_changed_etag(tmp_path: Path) -> None:
@@ -196,6 +201,162 @@ def test_rest_cached_missing_blob_falls_back_to_full_request(
 
     assert client.rest_cached("repos/o/r/value") == {"value": 1}
     assert seen_conditions == [None, None]
+
+
+def test_iter_rest_pages_revalidates_each_page_with_etag(tmp_path: Path) -> None:
+    conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        endpoint = argv[argv.index("--include") + 1]
+        condition = header_value(argv, "If-None-Match")
+        conditions.append(condition)
+        if endpoint.endswith("/labels"):
+            if condition is None:
+                return http_response(
+                    200,
+                    [{"name": "one"}],
+                    {
+                        "ETag": '"p1"',
+                        "Link": (
+                            '<https://api.github.com/repos/o/r/labels?page=2>;'
+                            ' rel="next"'
+                        ),
+                    },
+                )
+            return empty_http_response(304, {"ETag": '"p1"'})
+        if condition is None:
+            return http_response(200, [{"name": "two"}], {"ETag": '"p2"'})
+        return empty_http_response(304, {"ETag": '"p2"'})
+
+    client, store, _ = make_client(tmp_path, runner)
+    first = list(
+        client.iter_rest_pages("repos/o/r/labels", params={"per_page": 100})
+    )
+    second = list(
+        client.iter_rest_pages("repos/o/r/labels", params={"per_page": 100})
+    )
+
+    assert [page.data for page in first] == [[{"name": "one"}], [{"name": "two"}]]
+    assert [page.data for page in second] == [[{"name": "one"}], [{"name": "two"}]]
+    assert conditions == [None, None, '"p1"', '"p2"']
+    cache = store.read_json("cache/http-etag.json")
+    assert len(cache) == 2
+    page_one = next(entry for entry in cache.values() if entry["has_next"])
+    page_two = next(entry for entry in cache.values() if not entry["has_next"])
+    assert "page=2" in page_one["link"]
+    assert page_one["validated_at"]
+    assert page_two["link"] is None
+    assert page_two["validated_at"]
+
+
+def test_iter_rest_pages_304_without_cached_link_refetches(
+    tmp_path: Path,
+) -> None:
+    conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        endpoint = argv[argv.index("--include") + 1]
+        condition = header_value(argv, "If-None-Match")
+        conditions.append(condition)
+        if endpoint.endswith("/labels"):
+            if condition is None:
+                return http_response(
+                    200,
+                    [{"name": "one"}],
+                    {
+                        "ETag": '"p1"',
+                        "Link": (
+                            '<https://api.github.com/repos/o/r/labels?page=2>;'
+                            ' rel="next"'
+                        ),
+                    },
+                )
+            return empty_http_response(304, {"ETag": '"p1"'})
+        if condition is None:
+            return http_response(200, [{"name": "two"}], {"ETag": '"p2"'})
+        return empty_http_response(304, {"ETag": '"p2"'})
+
+    client, store, _ = make_client(tmp_path, runner)
+    list(client.iter_rest_pages("repos/o/r/labels", params={"per_page": 100}))
+    cache = store.read_json("cache/http-etag.json")
+    for entry in cache.values():
+        if entry.get("has_next"):
+            entry.pop("link", None)
+            entry.pop("has_next", None)
+    store.write_json("cache/http-etag.json", cache)
+
+    second = list(
+        client.iter_rest_pages("repos/o/r/labels", params={"per_page": 100})
+    )
+
+    assert [page.data for page in second] == [[{"name": "one"}], [{"name": "two"}]]
+    assert conditions == [None, None, '"p1"', None, '"p2"']
+
+
+def test_iter_rest_pages_changed_page_refetches(tmp_path: Path) -> None:
+    conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        condition = header_value(argv, "If-None-Match")
+        conditions.append(condition)
+        if condition is None:
+            return http_response(200, [{"value": 1}], {"ETag": '"p1"'})
+        if condition == '"p1"':
+            return http_response(200, [{"value": 2}], {"ETag": '"p2"'})
+        return empty_http_response(304, {"ETag": '"p2"'})
+
+    client, store, _ = make_client(tmp_path, runner)
+    first = list(client.iter_rest_pages("repos/o/r/items"))
+    second = list(client.iter_rest_pages("repos/o/r/items"))
+
+    assert [page.data for page in first] == [[{"value": 1}]]
+    assert [page.data for page in second] == [[{"value": 2}]]
+    assert conditions == [None, '"p1"']
+    cache = store.read_json("cache/http-etag.json")
+    entry = next(iter(cache.values()))
+    assert entry["etag"] == '"p2"'
+
+
+def test_iter_rest_pages_without_etag_does_not_cache(tmp_path: Path) -> None:
+    conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        conditions.append(header_value(argv, "If-None-Match"))
+        return http_response(200, [{"value": 1}])
+
+    client, store, _ = make_client(tmp_path, runner)
+    list(client.iter_rest_pages("repos/o/r/items"))
+    list(client.iter_rest_pages("repos/o/r/items"))
+
+    assert conditions == [None, None]
+    assert not store.secure_path("cache/http-etag.json").is_file()
+
+
+def test_iter_rest_pages_missing_blob_falls_back(tmp_path: Path) -> None:
+    conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        conditions.append(header_value(argv, "If-None-Match"))
+        return http_response(200, [{"value": 1}], {"ETag": '"p1"'})
+
+    client, store, _ = make_client(tmp_path, runner)
+    list(client.iter_rest_pages("repos/o/r/items"))
+    cache = store.read_json("cache/http-etag.json")
+    blob_sha = next(iter(cache.values()))["blob_sha256"]
+    store.remove_file(f"blobs/{blob_sha}")
+
+    list(client.iter_rest_pages("repos/o/r/items"))
+    assert conditions == [None, None]
+
+
+def test_prune_etag_cache_keeps_newest_entries() -> None:
+    cache = {
+        "old": {"validated_at": "2026-01-01T00:00:00Z"},
+        "mid": {"validated_at": "2026-02-01T00:00:00Z"},
+        "new": {"validated_at": "2026-03-01T00:00:00Z"},
+    }
+
+    assert set(_prune_etag_cache(cache, limit=2)) == {"mid", "new"}
 
 
 def test_graphql_pagination(tmp_path: Path) -> None:

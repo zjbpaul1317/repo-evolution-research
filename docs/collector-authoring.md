@@ -77,7 +77,7 @@ def collect_issue_comments(
 | `total_known_key` | 从父详情对象读取 `total_known` 的字段名 |
 | `mismatch_reason` | 父详情总数与抓取数不一致时的 `truncation_reason` |
 
-`fetch_section()` 负责分页、cap、`total_known`、`build_section()` 和页数统计，返回 `(section, pages)`。分页计数只来自 `FetchResult.pages`；请求预算仍由 `client.usage` 前后差值统计。可变单对象 REST GET 可用 `client.rest_cached()` 做 ETag 重验证；分页列表仍走 `iter_rest_pages`，不要自行缓存整页。
+`fetch_section()` 负责分页、cap、`total_known`、`build_section()` 和页数统计，返回 `(section, pages)`。分页计数只来自 `FetchResult.pages`；请求预算仍由 `client.usage` 前后差值统计。可变单对象 REST GET 可用 `client.rest_cached()` 做 ETag 重验证；分页列表统一走 `iter_rest_pages`，它会逐页做 ETag 重验证并复用缓存的 Link header，collector 不要自行缓存整页。
 
 PR collector 的 5 个 section 已改为声明式实现，见 `collectors/pull_requests.py` 的 `_section_specs()`。Release 列表也通过 `SectionSpec` + `fetch_section_result()` 抓取；Issue comments/timeline 使用 `SectionSpec` + `fetch_section()`。Discussion、文档快照和外部 envelope 不套用 `fetch_section()`，只复用 `CollectContext`、`text_ref`、状态/coverage 契约和 section 级分层。
 
