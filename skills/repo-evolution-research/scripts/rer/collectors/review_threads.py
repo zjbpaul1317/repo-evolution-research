@@ -76,6 +76,7 @@ class _ThreadItem:
     item: dict[str, Any]
     comments_has_next: bool
     comments_cursor: str | None
+    comments_missing: bool = False
 
 
 @dataclass
@@ -171,7 +172,10 @@ def read_review_threads(
                     duplicates += 1
                     continue
                 items[identifier] = item
-                if parsed.comments_has_next:
+                if parsed.comments_missing:
+                    comment_state.connection_missing = True
+                    item["comments_truncated"] = True
+                elif parsed.comments_has_next:
                     if parsed.comments_cursor is None:
                         comment_state.cursor_missing = True
                         item["comments_truncated"] = True
@@ -334,6 +338,7 @@ def _thread_item(raw: Any) -> _ThreadItem | None:
     comments_truncated = False
     comments_has_next = False
     comments_cursor: str | None = None
+    comments_missing = not isinstance(comments, Mapping)
     if isinstance(comments, Mapping):
         comments_total = as_optional_int(comments.get("totalCount"))
         nodes = comments.get("nodes")
@@ -369,6 +374,7 @@ def _thread_item(raw: Any) -> _ThreadItem | None:
         item=item,
         comments_has_next=comments_has_next,
         comments_cursor=comments_cursor,
+        comments_missing=comments_missing,
     )
 
 

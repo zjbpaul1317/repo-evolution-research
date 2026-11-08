@@ -370,17 +370,14 @@ def _read_pr(
         sections[spec.name] = section
         pages += section_pages
 
-    if "review_threads" in wanted:
-        thread_read = read_review_threads(
-            client,
-            owner=owner,
-            name=name,
-            number=number,
-        )
-        sections["review_threads"] = thread_read.section
-        pages += thread_read.pages
-    else:
-        sections["review_threads"] = _existing_section(existing, "review_threads")
+    thread_read = read_review_threads(
+        client,
+        owner=owner,
+        name=name,
+        number=number,
+    )
+    sections["review_threads"] = thread_read.section
+    pages += thread_read.pages
 
     head_sha_end = _confirm_head(client, owner, name, number)
     pages += 1
@@ -462,16 +459,13 @@ _PR_SECTION_FLAGS = {
 
 
 def _wanted_sections(read: Mapping[str, bool] | None) -> set[str]:
-    wanted = {"commits"}
+    wanted = {"commits", "review_threads"}
     if read is None:
         wanted.update(_PR_SECTION_FLAGS)
-        wanted.add("review_threads")
         return wanted
     for section, flag in _PR_SECTION_FLAGS.items():
         if read.get(flag, True):
             wanted.add(section)
-    if read.get("reviews", True) or read.get("comments", True):
-        wanted.add("review_threads")
     return wanted
 
 

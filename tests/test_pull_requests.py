@@ -598,6 +598,52 @@ def test_review_threads_resolution_is_recorded(tmp_path: Path) -> None:
     assert "review_resolution_unknown" not in document["limitations"]
 
 
+def test_review_threads_are_reread_when_comments_and_reviews_are_disabled(
+    tmp_path: Path,
+) -> None:
+    graphql_calls: list[str | None] = []
+
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        graphql_calls.append(input_text)
+        return review_threads_response(
+            [
+                review_thread_node("PRRT_1", [8001]),
+            ]
+        )
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    result = _read_pr(
+        client,
+        store,
+        "github.com",
+        "acme",
+        "demo",
+        10,
+        existing=None,
+        force=False,
+        selection_reason=["agent_selection"],
+        observed_at="2026-11-01T08:00:10Z",
+        read={
+            "body": True,
+            "comments": False,
+            "reviews": False,
+            "files": False,
+            "diff": False,
+        },
+    )
+
+    assert graphql_calls
+    assert result.document["review_threads"]["status"] == "complete"
+    assert result.document["review_threads"]["items"][0]["id"] == "PRRT_1"
+    assert result.document["issue_comments"]["status"] == "not_requested"
+    assert result.document["reviews"]["status"] == "not_requested"
+
+
 def test_review_threads_graphql_errors_are_partial(tmp_path: Path) -> None:
     def graphql_handler(_input_text: str | None) -> CommandResult:
         return http_response(
@@ -941,6 +987,41 @@ def test_review_threads_comment_cursor_missing_is_partial(tmp_path: Path) -> Non
 
 
 def test_review_threads_comment_connection_missing_is_partial(
+    tmp_path: Path,
+) -> None:
+    def graphql_handler(_input_text: str | None) -> CommandResult:
+        node = review_thread_node("PRRT_1", [8001])
+        node.pop("comments")
+        return review_threads_response([node])
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+
+    document = load_pr_document(store, 10)
+    assert document is not None
+    threads = document["review_threads"]
+    assert threads["status"] == "partial"
+    assert (
+        "review_threads_comments_connection_missing"
+        in threads["truncation_reason"]
+    )
+    assert threads["items"][0]["comments_truncated"] is True
+    assert threads["items"][0]["comment_ids"] == []
+    assert "review_threads_truncated" in document["limitations"]
+
+
+def test_review_threads_nested_comment_connection_missing_is_partial(
     tmp_path: Path,
 ) -> None:
     def graphql_handler(input_text: str | None) -> CommandResult:

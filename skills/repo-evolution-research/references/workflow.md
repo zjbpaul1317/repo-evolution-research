@@ -84,7 +84,7 @@ Agent 读取 `analysis/packs/*.md` 后写 `analysis/selection.json`。该文件�
 }
 ```
 
-- `depth` 为 `quick` / `deep`；`read` 的五个布尔值控制可独立请求的 section。Issue/Discussion 的 body 随 detail 查询返回，没有独立请求，因此 `read.body` 对这两类不裁剪，权威文档始终保存 body；`comments` 控制 Issue 的 comments/timeline 与 Discussion 的 comments/replies。`reviews`/`files`/`diff` 只对 PR 有意义，`diff` 是保留项，当前版本不抓取完整 diff。
+- `depth` 为 `quick` / `deep`；`read` 的五个布尔值控制可独立请求的 section。Issue/Discussion 的 body 随 detail 查询返回，没有独立请求，因此 `read.body` 对这两类不裁剪，权威文档始终保存 body；`comments` 控制 Issue 的 comments/timeline 与 Discussion 的 comments/replies。`reviews`/`files`/`diff` 只对 PR 有意义，`diff` 是保留项，当前版本不抓取完整 diff。PR 的 `review_threads` 元数据不受这五个布尔值控制，每次重建 PR 文档都会重读。
 - 只接受已存在实体；重复实体、未知 `run_id`、缺少字段会被拒绝。
 - 工作流上限为两轮 selection。CLI 不强制轮数，但不要为填表无限补抓。
 - `collect --selection` 只读取已选且尚未读全的对象；PR/Issue/Discussion 可按 section 补读并与已有文档合并；Release/Doc 只记录为阅读选择，不重新抓取。
