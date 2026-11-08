@@ -10,6 +10,13 @@
 - Revert/backport 关系：从 PR 正文、评论和 commit message 中识别显式文本引用（如 `This reverts commit <sha>`、`Backports #123`、`Cherry-picked from <sha>`）。`reverts` 可解释实现被回退；`backports` 只记录后向关系，不提升 capability 状态。
 - 可变单对象和分页 REST 列表的 ETag 条件请求：PR/Issue detail 与 `iter_rest_pages` 逐页命中 304 时复用本地 payload；列表页同时缓存 `link` / `has_next`，304 缺少 Link 时使用缓存或回退全量请求，避免静默少翻页。缓存 blob 缺失或损坏时回退全量请求。
 
+### 修复
+
+- 阅读包文档历史摘要按 `(revision, path)` 精确匹配，并解码 entity ID 中的 percent-encoding；避免多个 revision 同路径时展示旧历史，以及含空格/非 ASCII 路径时摘要丢失。
+- `reverts` / `backports` 支持同一关键词后的多个相邻引用（如 `Reverts #12 and #13`），不再只记录第一个。
+- PR 部分读取即使关闭 comments/reviews，也会重读 review thread 元数据；缺失 comments connection 时明确标记 `partial` 与截断原因。
+- 文档历史恰好 20 条时不再误报截断；读取时多请求 1 条用于判断是否还有更多提交。
+
 ### 变更
 
 - 断点恢复：`files` / `commits` 仅在 head/base SHA 未变、section 完整且 text blob 校验通过时复用；可变 review thread 每轮重建都重读；旧文档完整而本次重建不完整时保留旧文档并标记 `refresh_incomplete`。
@@ -33,7 +40,7 @@
 
 ### 验证
 
-- `pytest -q`：906 passed。
+- `pytest -q`：912 passed。
 - `python scripts/gen_assets.py --check`：通过。
 - `bash scripts/lint.sh`：通过。
 - `git diff --check`：通过。
