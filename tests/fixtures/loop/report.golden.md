@@ -1,7 +1,7 @@
 <!-- template_version: 2 -->
 # acme/demo 技术演进研究（2026-08-03 至 2026-11-01）
 
-> run_id：`20261101T080000Z-aaaaaaaa` ｜ research：`e60d7a71a419f2427a9646ca6b482da4b6e31926a819d78047abb319ff8674fa` ｜ inputs：`9c3ac8e520ed8a011910044ece4fa596bc9b543311c56921ef1b946c9bfd7dab` ｜ template：`2`
+> run_id：`20261101T080000Z-aaaaaaaa` ｜ research：`e60d7a71a419f2427a9646ca6b482da4b6e31926a819d78047abb319ff8674fa` ｜ inputs：`e59ccd02df1af0e09080fd802dbd6cd2106ce1cd0ed0576938063fbb66f6c97b` ｜ template：`2`
 > 研究窗口：2026-08-03T08:00:00Z 至 2026-11-01T08:00:00Z（UTC）
 > 观察时间：2026-11-01T08:00:00Z 至 2026-11-01T08:00:00Z ｜ 状态口径：`observed_current`
 > research.created_at：2026-11-01T09:00:00Z

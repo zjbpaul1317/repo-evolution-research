@@ -205,6 +205,24 @@
             "outdated": { "type": "integer", "minimum": 0 }
           }
         },
+        "doc_history": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "fetched",
+            "latest_sha",
+            "latest_date",
+            "truncated"
+          ],
+          "properties": {
+            "status": { "type": "string", "minLength": 1 },
+            "fetched": { "type": "integer", "minimum": 0 },
+            "latest_sha": { "type": ["string", "null"] },
+            "latest_date": { "type": ["string", "null"] },
+            "truncated": { "type": "boolean" }
+          }
+        },
         "preview": {
           "type": "object",
           "additionalProperties": false,

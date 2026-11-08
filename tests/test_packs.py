@@ -67,6 +67,36 @@ def test_review_thread_summary_counts_resolution() -> None:
     ) is None
 
 
+def test_doc_history_summary_exposes_latest_commit() -> None:
+    item = {
+        "kind": "doc",
+        "entity_id": "github.com/acme/demo/" + "a" * 40 + "/docs/design.md",
+    }
+    document = {
+        "path": "docs/design.md",
+        "history": {
+            "status": "complete",
+            "fetched": 2,
+            "truncated": False,
+            "items": [
+                {"sha": "b" * 40, "date": "2026-10-20T10:00:00Z"},
+                {"sha": "c" * 40, "date": "2026-10-01T08:00:00Z"},
+            ],
+        },
+    }
+
+    assert packs._doc_history_summary(item, {"docs/design.md": document}) == {
+        "status": "complete",
+        "fetched": 2,
+        "latest_sha": "b" * 40,
+        "latest_date": "2026-10-20T10:00:00Z",
+        "truncated": False,
+    }
+    assert packs._doc_history_summary(
+        {**item, "kind": "issue"}, {"docs/design.md": document}
+    ) is None
+
+
 def test_pack_budget_protects_agent_selected_items(tmp_path: Path) -> None:
     store, config, manifest, candidates = candidates_for(
         tmp_path,

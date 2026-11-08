@@ -9,6 +9,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from . import SCHEMA_VERSION
+from .collectors.docs import load_doc_snapshots
 from .collectors.pr_store import load_pr_documents
 from .collectors.proposal_store import load_discussion_documents, load_issue_documents
 from .diversity import diverse_order
@@ -71,6 +72,10 @@ def build_pack_index(
         int(document["number"]): document
         for document in load_pr_documents(store)
     }
+    doc_documents = {
+        str(document["path"]): document
+        for document in load_doc_snapshots(store)
+    }
     for group in groups:
         for item in group["items"]:
             values = previews.get(str(item["entity_id"]), [])
@@ -78,6 +83,9 @@ def build_pack_index(
             thread_summary = _review_thread_summary(item, pr_documents)
             if thread_summary is not None:
                 item["review_threads"] = thread_summary
+            history_summary = _doc_history_summary(item, doc_documents)
+            if history_summary is not None:
+                item["doc_history"] = history_summary
             item["evidence_previews"] = values if _is_research_item(
                 item, research_handoff=research_handoff
             ) else []
@@ -492,6 +500,39 @@ def _useful_excerpt(value: Mapping[str, Any], metadata: Mapping[str, int]) -> bo
     )
 
 
+def _doc_history_summary(
+    item: Mapping[str, Any],
+    documents: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    if item.get("kind") != "doc":
+        return None
+    entity_identifier = str(item.get("entity_id") or "")
+    parts = entity_identifier.split("/", 4)
+    if len(parts) != 5:
+        return None
+    document = documents.get(parts[4])
+    if not isinstance(document, Mapping):
+        return None
+    section = document.get("history")
+    if not isinstance(section, Mapping):
+        return None
+    items = [
+        value for value in section.get("items") or [] if isinstance(value, Mapping)
+    ]
+    latest = items[0] if items else None
+    return {
+        "status": str(section.get("status") or "unknown"),
+        "fetched": int(section.get("fetched") or 0),
+        "latest_sha": str(latest.get("sha")) if latest is not None else None,
+        "latest_date": (
+            str(latest.get("date"))
+            if latest is not None and latest.get("date") is not None
+            else None
+        ),
+        "truncated": bool(section.get("truncated")),
+    }
+
+
 def _review_thread_summary(
     item: Mapping[str, Any],
     documents: Mapping[int, Mapping[str, Any]],
@@ -896,6 +937,14 @@ def _render_item(
             f"unresolved={threads.get('unresolved')} | "
             f"outdated={threads.get('outdated')}"
         )
+    history = item.get("doc_history")
+    if isinstance(history, Mapping):
+        lines.append(
+            f"- doc_history: status={history.get('status') or '-'} | "
+            f"commits={history.get('fetched')} | "
+            f"latest={history.get('latest_sha') or '-'} | "
+            f"truncated={str(bool(history.get('truncated'))).lower()}"
+        )
     lines.append("")
     if research:
         previews = item.get("evidence_previews") or []
@@ -1055,6 +1104,11 @@ def _item_index(item: Mapping[str, Any]) -> dict[str, Any]:
         "review_threads": (
             dict(item["review_threads"])
             if isinstance(item.get("review_threads"), Mapping)
+            else None
+        ),
+        "doc_history": (
+            dict(item["doc_history"])
+            if isinstance(item.get("doc_history"), Mapping)
             else None
         ),
         "preview": {
