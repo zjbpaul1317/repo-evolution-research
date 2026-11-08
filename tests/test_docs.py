@@ -10,10 +10,13 @@ import pytest
 
 from rer.collectors.base import CollectContext
 from rer.collectors.docs import (
+    HISTORY_CAP,
     collect_documents,
+    derive_doc_limitations,
     doc_path,
     load_doc_snapshots,
     load_revision_snapshots,
+    validate_doc_snapshot,
 )
 from rer.errors import GitHubAuthError
 from rer.github import CommandResult, GitHubClient
@@ -137,6 +140,208 @@ def test_collects_fixed_revision_document(tmp_path: Path) -> None:
     )
     assert entity["roles"] == ["design"]
     assert entity["raw_state"]["detail_path"] == doc_path(REVISION, "docs/design.md")
+
+
+def test_collects_bounded_document_history(tmp_path: Path) -> None:
+    def handler(endpoint: str, input_text: str) -> CommandResult:
+        if endpoint == "repos/acme/demo/contents/docs/design.md":
+            return http_response(200, content_body("docs/design.md", "hello world"))
+        if endpoint == "repos/acme/demo/commits":
+            return http_response(
+                200,
+                [
+                    {
+                        "sha": "d" * 40,
+                        "html_url": "https://github.com/acme/demo/commit/" + "d" * 40,
+                        "commit": {
+                            "message": "Revise cache cleanup design",
+                            "author": {
+                                "name": "Alice",
+                                "date": "2026-10-20T10:00:00Z",
+                            },
+                        },
+                    },
+                    {
+                        "sha": "e" * 40,
+                        "html_url": "https://github.com/acme/demo/commit/" + "e" * 40,
+                        "commit": {
+                            "message": "Add cache design",
+                            "author": {
+                                "name": "Bob",
+                                "date": "2026-10-01T08:00:00Z",
+                            },
+                        },
+                    },
+                ],
+            )
+        return http_response(404, {"message": "unhandled"})
+
+    store, client = make_client(tmp_path, handler)
+    result = collect_documents(
+        context_for(client, store, lambda: "2026-11-01T08:00:10Z"),
+        source_profile=source_profile(design=["docs/design.md"]),
+        revision=REVISION,
+    )
+
+    document = load_doc_snapshots(store)[0]
+    history = document["history"]
+    assert history["status"] == "complete"
+    assert history["fetched"] == 2
+    assert history["truncated"] is False
+    assert [item["sha"] for item in history["items"]] == ["d" * 40, "e" * 40]
+    assert history["items"][0]["message"]["preview"] == "Revise cache cleanup design"
+    assert history["items"][0]["author"] == "Alice"
+    assert history["items"][0]["date"] == "2026-10-20T10:00:00Z"
+    assert result.counts["history_requested"] == 1
+    assert result.counts["history_read"] == 1
+    assert "doc_history_partial" not in document["limitations"]
+
+
+def test_document_history_limit_is_visible(tmp_path: Path) -> None:
+    def handler(endpoint: str, input_text: str) -> CommandResult:
+        if endpoint == "repos/acme/demo/contents/docs/design.md":
+            return http_response(200, content_body("docs/design.md", "hello world"))
+        if endpoint == "repos/acme/demo/commits":
+            return http_response(
+                200,
+                [
+                    {
+                        "sha": f"{index:040x}",
+                        "html_url": f"https://github.com/acme/demo/commit/{index}",
+                        "commit": {
+                            "message": f"Change {index}",
+                            "author": {
+                                "name": "Alice",
+                                "date": "2026-10-20T10:00:00Z",
+                            },
+                        },
+                    }
+                    for index in range(HISTORY_CAP)
+                ],
+            )
+        return http_response(404, {"message": "unhandled"})
+
+    store, client = make_client(tmp_path, handler)
+    collect_documents(
+        context_for(client, store, lambda: "2026-11-01T08:00:10Z"),
+        source_profile=source_profile(design=["docs/design.md"]),
+        revision=REVISION,
+    )
+
+    document = load_doc_snapshots(store)[0]
+    assert document["history"]["status"] == "partial"
+    assert document["history"]["truncated"] is True
+    assert (
+        document["history"]["truncation_reason"]
+        == f"history_limit_{HISTORY_CAP}"
+    )
+    assert "doc_history_truncated" in document["limitations"]
+
+
+def test_document_history_reuse_and_force_refresh(tmp_path: Path) -> None:
+    state = {"version": 1}
+    calls: list[str] = []
+
+    def handler(endpoint: str, input_text: str) -> CommandResult:
+        if endpoint == "repos/acme/demo/contents/docs/design.md":
+            return http_response(200, content_body("docs/design.md", "hello world"))
+        if endpoint == "repos/acme/demo/commits":
+            calls.append(endpoint)
+            sha = "a" * 40 if state["version"] == 1 else "b" * 40
+            return http_response(
+                200,
+                [
+                    {
+                        "sha": sha,
+                        "html_url": f"https://github.com/acme/demo/commit/{sha}",
+                        "commit": {
+                            "message": f"Version {state['version']}",
+                            "author": {
+                                "name": "Alice",
+                                "date": "2026-10-20T10:00:00Z",
+                            },
+                        },
+                    }
+                ],
+            )
+        return http_response(404, {"message": "unhandled"})
+
+    store, client = make_client(tmp_path, handler)
+    collect_documents(
+        context_for(client, store, lambda: "2026-11-01T08:00:10Z"),
+        source_profile=source_profile(design=["docs/design.md"]),
+        revision=REVISION,
+    )
+    first = load_doc_snapshots(store)[0]
+    assert first["history"]["items"][0]["sha"] == "a" * 40
+    calls.clear()
+
+    client2 = GitHubClient(
+        store,
+        BUDGET,
+        gh_path="gh",
+        runner=lambda argv, input_text: handler(
+            argv[argv.index("--include") + 1],
+            input_text,
+        ),
+        sleep=lambda _seconds: None,
+        now=lambda: NOW,
+        max_attempts=1,
+    )
+    collect_documents(
+        context_for(client2, store, lambda: "2026-11-01T08:00:20Z"),
+        source_profile=source_profile(design=["docs/design.md"]),
+        revision=REVISION,
+    )
+    reused = load_doc_snapshots(store)[0]
+    assert calls == []
+    assert reused["history"]["items"][0]["sha"] == "a" * 40
+
+    state["version"] = 2
+    client3 = GitHubClient(
+        store,
+        BUDGET,
+        gh_path="gh",
+        runner=lambda argv, input_text: handler(
+            argv[argv.index("--include") + 1],
+            input_text,
+        ),
+        sleep=lambda _seconds: None,
+        now=lambda: NOW,
+        max_attempts=1,
+    )
+    collect_documents(
+        context_for(client3, store, lambda: "2026-11-01T08:00:30Z"),
+        source_profile=source_profile(design=["docs/design.md"]),
+        revision=REVISION,
+        force=True,
+    )
+    refreshed = load_doc_snapshots(store)[0]
+    assert calls == ["repos/acme/demo/commits"]
+    assert refreshed["history"]["items"][0]["sha"] == "b" * 40
+
+
+def test_legacy_doc_snapshot_without_history_still_validates(tmp_path: Path) -> None:
+    def handler(endpoint: str, input_text: str) -> CommandResult:
+        if endpoint == "repos/acme/demo/contents/docs/design.md":
+            return http_response(200, content_body("docs/design.md", "hello world"))
+        if endpoint == "repos/acme/demo/commits":
+            return http_response(200, [])
+        return http_response(404, {"message": "unhandled"})
+
+    store, client = make_client(tmp_path, handler)
+    collect_documents(
+        context_for(client, store, lambda: "2026-11-01T08:00:10Z"),
+        source_profile=source_profile(design=["docs/design.md"]),
+        revision=REVISION,
+    )
+    document = load_doc_snapshots(store)[0]
+    legacy = dict(document)
+    legacy.pop("history", None)
+    legacy["limitations"] = derive_doc_limitations(legacy)
+
+    validate_doc_snapshot(legacy)
+    assert "doc_history_unavailable" not in legacy["limitations"]
 
 
 def test_budget_exhaustion_marks_run_level_budget(tmp_path: Path) -> None:

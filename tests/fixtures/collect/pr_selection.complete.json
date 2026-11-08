@@ -42,12 +42,12 @@
   ],
   "observed_at": "2026-11-01T08:00:10Z",
   "quota": {
+    "agent_pr_reserve": 0,
     "deep_entities_used": 1,
     "max_deep_entities": 40,
     "merged_quota": 14,
     "open_quota": 8,
-    "pr_quota": 22,
-    "agent_pr_reserve": 0
+    "pr_quota": 22
   },
   "repository": {
     "host": "github.com",

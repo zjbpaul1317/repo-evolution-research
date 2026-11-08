@@ -81,8 +81,24 @@ class FakeGitHub:
         params = _params(argv)
         self.requests.append((endpoint, params))
         if endpoint == "graphql":
-            self.unrouted.append(endpoint)
-            return _response({"message": "graphql not configured"}, 404)
+            return _response(
+                {
+                    "data": {
+                        "repository": {
+                            "pullRequest": {
+                                "reviewThreads": {
+                                    "totalCount": 0,
+                                    "pageInfo": {
+                                        "hasNextPage": False,
+                                        "endCursor": None,
+                                    },
+                                    "nodes": [],
+                                }
+                            }
+                        }
+                    }
+                }
+            )
 
         repo = f"repos/{OWNER}/{NAME}"
         if endpoint == repo:
@@ -100,6 +116,8 @@ class FakeGitHub:
         if endpoint == f"{repo}/pulls/{PR_NUMBER}/files":
             return _response(self._files())
         if endpoint == f"{repo}/pulls/{PR_NUMBER}/commits":
+            return _response(self._commits())
+        if endpoint == f"{repo}/commits":
             return _response(self._commits())
         if endpoint == f"{repo}/issues/{PR_NUMBER}/comments":
             return _response([])

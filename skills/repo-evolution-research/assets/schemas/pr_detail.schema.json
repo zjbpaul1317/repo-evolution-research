@@ -207,6 +207,9 @@
     "review_comments": {
       "$ref": "#/$defs/review_comment_section"
     },
+    "review_threads": {
+      "$ref": "#/$defs/review_thread_section"
+    },
     "diff": {
       "$ref": "#/$defs/diff_ref"
     },
@@ -799,6 +802,115 @@
         }
       }
     },
+    "review_thread_section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "fetched",
+        "total_known",
+        "truncated",
+        "truncation_reason",
+        "items"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/section_status"
+        },
+        "fetched": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_known": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "truncation_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duplicates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/review_thread_item"
+          }
+        }
+      }
+    },
+    "review_thread_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "is_resolved",
+        "is_outdated",
+        "path",
+        "line",
+        "start_line",
+        "comment_ids",
+        "comments_total",
+        "comments_truncated"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "is_resolved": {
+          "type": "boolean"
+        },
+        "is_outdated": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "start_line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "comment_ids": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "uniqueItems": true
+        },
+        "comments_total": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "comments_truncated": {
+          "type": "boolean"
+        }
+      }
+    },
     "coverage": {
       "type": "object",
       "additionalProperties": false,
@@ -827,6 +939,9 @@
           "$ref": "#/$defs/section_status"
         },
         "review_comments": {
+          "$ref": "#/$defs/section_status"
+        },
+        "review_threads": {
           "$ref": "#/$defs/section_status"
         }
       }

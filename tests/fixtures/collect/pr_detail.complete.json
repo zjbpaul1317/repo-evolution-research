@@ -40,6 +40,7 @@
     "files": "complete",
     "issue_comments": "complete",
     "review_comments": "complete",
+    "review_threads": "complete",
     "reviews": "complete"
   },
   "created_at": "2026-09-01T00:00:00Z",
@@ -117,7 +118,6 @@
   "limitations": [
     "observed_current_state",
     "patch_missing",
-    "review_resolution_unknown",
     "squash_rebase_unverified"
   ],
   "merge_commit_sha": "dddddddddddddddddddddddddddddddddddddddd",
@@ -164,6 +164,15 @@
     "truncation_reason": null
   },
   "review_comments_count": 1,
+  "review_threads": {
+    "duplicates": 0,
+    "fetched": 0,
+    "items": [],
+    "status": "complete",
+    "total_known": 0,
+    "truncated": false,
+    "truncation_reason": null
+  },
   "reviews": {
     "duplicates": 0,
     "fetched": 1,

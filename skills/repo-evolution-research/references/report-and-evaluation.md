@@ -71,7 +71,7 @@ ID 在各自命名空间内唯一。topic 必须引用 claim/capability/reading�
 ## 交付约定
 
 - `report.md` 是唯一正式报告；`incomplete.md` 只解释失败。
-- limitations 必须覆盖：实际窗口、采集缺口、未读材料、状态核对截止时间、以及任何 validation warning 的影响。
+- limitations 必须覆盖：实际窗口、采集缺口、未读材料、状态核对截止时间、review thread 解析/文档历史不可用的影响，以及任何 validation warning 的影响。
 - 报告中的 review/issue 速度类观察只能说“观察到”，不能说“项目一定在加速/放缓”。
 - 合并状态、发布核验、可用性声明必须能追溯到 evidence 或 `validation.lifecycle`。
 
@@ -84,7 +84,7 @@ ID 在各自命名空间内唯一。topic 必须引用 claim/capability/reading�
 | 结构覆盖 | 每个 topic 有 claim/capability/reading；每个 capability 有四个状态维度和 evidence；unknown 有 reason/missing_evidence |
 | 事实可核查 | 每个 observed/inferred claim 有 evidence；引文 quote 与 blob 一致；无悬空 ID |
 | 状态正确性 | `validation.lifecycle` 与声明一致；merged ≠ released；released 有 `verified_in_release`；revert/remaining 冲突为零 |
-| 关系覆盖 | 关键 PR→commit、PR→Issue、Release→note、revert 关系存在；无把 mentions 当 implements |
+| 关系覆盖 | 关键 PR→commit、PR→Issue、Release→note、revert/backport 关系存在；无把 mentions 当 implements 或 backport |
 | 预算与局限 | collect 的 partial/阻塞通道进入 limitations；未读对象和抽样范围可见 |
 | 报告确定性 | 重复 validate/render 字节一致；无手改报告；模板版本匹配 |
 

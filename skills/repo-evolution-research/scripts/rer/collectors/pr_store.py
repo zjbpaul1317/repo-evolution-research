@@ -21,13 +21,18 @@ from .entity_store import (
     project_pr_detail,
     prune_deep_read,
 )
-from .status import PR_DETAIL_SECTIONS, derive_detail_status, derive_limitations
+from .status import (
+    PR_DETAIL_SECTIONS,
+    derive_detail_status,
+    derive_limitations,
+    pr_detail_sections,
+)
 
 
 def validate_pr_document(document: Mapping[str, Any]) -> None:
     validate_document(document, "pr_detail")
     expected = derive_detail_status(
-        sections={key: document[key] for key in PR_DETAIL_SECTIONS},
+        sections=pr_detail_sections(document),
         head_changed=bool(document["head_changed"]),
         head_unverified=document["head_sha"] is None or document["head_sha_end"] is None,
         diff_status=str(document["diff"]["status"]),
@@ -47,6 +52,14 @@ def validate_pr_document(document: Mapping[str, Any]) -> None:
         if document["coverage"][key] != document[key]["status"]:
             raise StoreError(
                 f"pr_detail.coverage.{key} 与 section 状态不一致",
+                source="pr_store.invariant",
+                details={"number": document.get("number")},
+            )
+    threads = document.get("review_threads")
+    if isinstance(threads, Mapping):
+        if document["coverage"].get("review_threads") != threads.get("status"):
+            raise StoreError(
+                "pr_detail.coverage.review_threads 与 section 状态不一致",
                 source="pr_store.invariant",
                 details={"number": document.get("number")},
             )

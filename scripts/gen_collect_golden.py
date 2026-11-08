@@ -68,15 +68,20 @@ def collect_pr(
 
 
 def cli_factory(store: SnapshotStore, budget: dict[str, Any], **kwargs: Any) -> GitHubClient:
+    def runner(argv: list[str], input_text: str | None):
+        if "graphql" in argv[:4]:
+            return pr_helpers.empty_review_threads_response()
+        return _handler(
+            argv[argv.index("--include") + 1],
+            pr_helpers.parse_params(argv),
+            pr_helpers._headers(argv),
+        )
+
     return GitHubClient(
         store,
         budget,
         gh_path="gh",
-        runner=lambda argv, input_text: _handler(
-            argv[argv.index("--include") + 1],
-            pr_helpers.parse_params(argv),
-            pr_helpers._headers(argv),
-        ),
+        runner=runner,
         sleep=lambda _seconds: None,
         now=lambda: pr_helpers.NOW,
         initial_usage=kwargs.get("initial_usage"),
@@ -113,6 +118,9 @@ def collect_manifest_coverage(tmp_path: Path, handler) -> list[dict[str, Any]]:
     original = (
         cli.collect_repository,
         cli.collect_activity,
+        cli.collect_releases,
+        cli.collect_documents,
+        cli.collect_proposals,
         cli.GitHubClient,
         cli.collect_pull_requests,
     )
@@ -127,6 +135,20 @@ def collect_manifest_coverage(tmp_path: Path, handler) -> list[dict[str, Any]]:
         overview=overview,
         counts={"pr_created": 1},
         candidate_count=1,
+    )
+    cli.collect_releases = lambda *args, **kwargs: SimpleNamespace(
+        coverage=[],
+        documents=[],
+        counts={"selected": 0, "written": 0},
+    )
+    cli.collect_documents = lambda *args, **kwargs: SimpleNamespace(
+        coverage=[],
+        documents=[],
+        counts={"selected": 0, "read": 0, "reused": 0},
+    )
+    cli.collect_proposals = lambda *args, **kwargs: SimpleNamespace(
+        coverage=[],
+        counts={"issue_selected": 0, "discussion_selected": 0, "candidates": 0},
     )
     cli.GitHubClient = cli_factory
     real_collect = cli.collect_pull_requests
@@ -144,6 +166,9 @@ def collect_manifest_coverage(tmp_path: Path, handler) -> list[dict[str, Any]]:
         (
             cli.collect_repository,
             cli.collect_activity,
+            cli.collect_releases,
+            cli.collect_documents,
+            cli.collect_proposals,
             cli.GitHubClient,
             cli.collect_pull_requests,
         ) = original

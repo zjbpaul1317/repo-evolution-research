@@ -29,6 +29,7 @@ from .pr_store import (
     write_pr_document,
 )
 from .progress import CollectProgress, coverage_entry
+from .review_threads import read_review_threads
 from .selection import (
     Candidate,
     build_candidates,
@@ -369,6 +370,18 @@ def _read_pr(
         sections[spec.name] = section
         pages += section_pages
 
+    if "review_threads" in wanted:
+        thread_read = read_review_threads(
+            client,
+            owner=owner,
+            name=name,
+            number=number,
+        )
+        sections["review_threads"] = thread_read.section
+        pages += thread_read.pages
+    else:
+        sections["review_threads"] = _existing_section(existing, "review_threads")
+
     head_sha_end = _confirm_head(client, owner, name, number)
     pages += 1
     head_changed = bool(head_sha_end and head_sha and head_sha_end != head_sha)
@@ -422,6 +435,7 @@ def _read_pr(
         "issue_comments": sections["issue_comments"],
         "reviews": sections["reviews"],
         "review_comments": sections["review_comments"],
+        "review_threads": sections["review_threads"],
         "diff": diff_ref,
         "coverage": coverage,
         "limitations": [],
@@ -451,10 +465,13 @@ def _wanted_sections(read: Mapping[str, bool] | None) -> set[str]:
     wanted = {"commits"}
     if read is None:
         wanted.update(_PR_SECTION_FLAGS)
+        wanted.add("review_threads")
         return wanted
     for section, flag in _PR_SECTION_FLAGS.items():
         if read.get(flag, True):
             wanted.add(section)
+    if read.get("reviews", True) or read.get("comments", True):
+        wanted.add("review_threads")
     return wanted
 
 
@@ -857,12 +874,19 @@ def _coverage_reason(
             )
     for item in results:
         number = f"#{item['number']}"
-        for key in ("files", "commits", "issue_comments", "review_comments"):
-            if item[key]["truncated"]:
+        for key in (
+            "files",
+            "commits",
+            "issue_comments",
+            "review_comments",
+            "review_threads",
+        ):
+            section = item.get(key)
+            if isinstance(section, Mapping) and section.get("truncated"):
                 reasons.setdefault(f"{key}_truncated", []).append(number)
         duplicates = sum(
             int(item[key].get("duplicates") or 0)
-            for key in PR_DETAIL_SECTIONS
+            for key in (*PR_DETAIL_SECTIONS, "review_threads")
             if isinstance(item.get(key), Mapping)
         )
         if duplicates:

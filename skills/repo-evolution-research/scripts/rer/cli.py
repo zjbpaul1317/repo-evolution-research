@@ -470,6 +470,7 @@ def command_collect(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]
             source_profile=collection.source_profile,
             revision=collection.default_branch_sha,
             include_docs=config["include_docs"],
+            force=args.force,
         )
     except Exception as exc:
         finished_at = to_iso_z(datetime.now(UTC))

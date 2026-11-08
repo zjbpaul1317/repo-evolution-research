@@ -187,6 +187,24 @@
             "blocked_entity_budget"
           ]
         },
+        "review_threads": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "fetched",
+            "resolved",
+            "unresolved",
+            "outdated"
+          ],
+          "properties": {
+            "status": { "type": "string", "minLength": 1 },
+            "fetched": { "type": "integer", "minimum": 0 },
+            "resolved": { "type": "integer", "minimum": 0 },
+            "unresolved": { "type": "integer", "minimum": 0 },
+            "outdated": { "type": "integer", "minimum": 0 }
+          }
+        },
         "preview": {
           "type": "object",
           "additionalProperties": false,

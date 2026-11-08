@@ -94,6 +94,9 @@
       ],
       "pattern": "^[0-9a-f]{40}$"
     },
+    "history": {
+      "$ref": "#/$defs/history_section"
+    },
     "limitations": {
       "type": "array",
       "items": {
@@ -177,6 +180,98 @@
     }
   ],
   "$defs": {
+    "history_section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "fetched",
+        "total_known",
+        "truncated",
+        "truncation_reason",
+        "items"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable",
+            "not_requested"
+          ]
+        },
+        "fetched": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_known": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "truncation_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duplicates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/history_item"
+          }
+        }
+      }
+    },
+    "history_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha",
+        "message",
+        "author",
+        "date",
+        "url"
+      ],
+      "properties": {
+        "sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "message": {
+          "$ref": "#/$defs/text_ref"
+        },
+        "author": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        }
+      }
+    },
     "repository": {
       "type": "object",
       "additionalProperties": false,

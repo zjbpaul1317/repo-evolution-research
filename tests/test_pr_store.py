@@ -14,10 +14,12 @@ from rer.collectors.pr_store import (
     load_pr_document,
     load_pr_summaries,
     reconcile_entity_projection,
+    validate_pr_document,
     write_pr_document,
 )
 from rer.collectors.progress import CollectProgress
 from rer.collectors.pull_requests import collect_pull_requests
+from rer.collectors.status import derive_limitations
 from rer.errors import StoreError
 from rer.models import make_entity
 
@@ -76,6 +78,23 @@ def test_collect_writes_only_the_authoritative_document(tmp_path: Path) -> None:
         "observed_at": "2026-11-01T08:00:10Z",
     }
     assert "deep_read" not in pull_entity(store)["normalized_state"]
+
+
+def test_legacy_document_without_optional_sections_still_validates(
+    tmp_path: Path,
+) -> None:
+    store = collect_once(tmp_path)
+    document = load_pr_document(store, 10)
+    assert document is not None
+    legacy = dict(document)
+    legacy.pop("review_threads", None)
+    coverage = dict(legacy["coverage"])
+    coverage.pop("review_threads", None)
+    legacy["coverage"] = coverage
+    legacy["limitations"] = derive_limitations(legacy)
+
+    validate_pr_document(legacy)
+    assert "review_resolution_unknown" in legacy["limitations"]
 
 
 def test_write_document_rejects_inconsistent_status(tmp_path: Path) -> None:

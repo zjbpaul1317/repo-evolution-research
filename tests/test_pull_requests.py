@@ -235,6 +235,8 @@ def default_handler(
             return http_response(200, [review_body(7000 + number)])
         if endpoint == f"repos/acme/demo/pulls/{number}/comments":
             return http_response(200, [review_comment_body(8000 + number)])
+        if endpoint == "repos/acme/demo/releases":
+            return http_response(200, [])
         return http_response(404, {"message": "unhandled"})
 
     return handler
@@ -253,9 +255,35 @@ def make_client(
     *,
     budget: dict[str, Any] | None = None,
     max_attempts: int = 1,
+    graphql_handler=None,
 ) -> tuple[SnapshotStore, GitHubClient]:
     store = create_run(tmp_path, REPOSITORY, new_run_id(NOW))
-    return store, build_client(store, handler, budget=budget, max_attempts=max_attempts)
+    return store, build_client(
+        store,
+        handler,
+        budget=budget,
+        max_attempts=max_attempts,
+        graphql_handler=graphql_handler,
+    )
+
+
+def empty_review_threads_response() -> CommandResult:
+    return http_response(
+        200,
+        {
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": {
+                            "totalCount": 0,
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            "nodes": [],
+                        }
+                    }
+                }
+            }
+        },
+    )
 
 
 def build_client(
@@ -265,16 +293,21 @@ def build_client(
     budget: dict[str, Any] | None = None,
     max_attempts: int = 1,
     initial_usage: dict[str, Any] | None = None,
+    graphql_handler=None,
 ) -> GitHubClient:
+    def runner(argv: list[str], input_text: str | None) -> CommandResult:
+        if "graphql" in argv[:4]:
+            if graphql_handler is not None:
+                return graphql_handler(input_text)
+            return empty_review_threads_response()
+        endpoint = argv[argv.index("--include") + 1]
+        return handler(endpoint, parse_params(argv), _headers(argv))
+
     return GitHubClient(
         store,
         budget or BUDGET,
         gh_path="gh",
-        runner=lambda argv, input_text: handler(
-            argv[argv.index("--include") + 1],
-            parse_params(argv),
-            _headers(argv),
-        ),
+        runner=runner,
         sleep=lambda _seconds: None,
         now=lambda: NOW,
         max_attempts=max_attempts,
@@ -398,6 +431,183 @@ def test_collects_selected_pull_request_detail(tmp_path: Path) -> None:
         "head_sha": HEAD,
         "observed_at": "2026-11-01T08:00:10Z",
     }
+
+
+def test_review_threads_resolution_is_recorded(tmp_path: Path) -> None:
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        payload = json.loads(input_text or "{}")
+        assert payload["variables"]["number"] == 10
+        return http_response(
+            200,
+            {
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "reviewThreads": {
+                                "totalCount": 2,
+                                "pageInfo": {
+                                    "hasNextPage": False,
+                                    "endCursor": None,
+                                },
+                                "nodes": [
+                                    {
+                                        "id": "PRRT_1",
+                                        "isResolved": True,
+                                        "isOutdated": False,
+                                        "path": "src/cache.py",
+                                        "line": 42,
+                                        "startLine": 40,
+                                        "comments": {
+                                            "totalCount": 2,
+                                            "nodes": [
+                                                {"databaseId": 8001},
+                                                {"databaseId": 8002},
+                                            ],
+                                        },
+                                    },
+                                    {
+                                        "id": "PRRT_2",
+                                        "isResolved": False,
+                                        "isOutdated": True,
+                                        "path": "src/cache.py",
+                                        "line": 50,
+                                        "startLine": None,
+                                        "comments": {
+                                            "totalCount": 1,
+                                            "nodes": [{"databaseId": 8003}],
+                                        },
+                                    },
+                                ],
+                            }
+                        }
+                    }
+                }
+            },
+        )
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        focus=["cache"],
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+
+    document = load_pr_document(store, 10)
+    assert document is not None
+    assert document["coverage"]["review_threads"] == "complete"
+    threads = document["review_threads"]
+    assert threads["status"] == "complete"
+    assert threads["fetched"] == 2
+    assert threads["total_known"] == 2
+    assert [item["id"] for item in threads["items"]] == ["PRRT_1", "PRRT_2"]
+    first, second = threads["items"]
+    assert first["is_resolved"] is True
+    assert first["comment_ids"] == [8001, 8002]
+    assert first["comments_total"] == 2
+    assert second["is_resolved"] is False
+    assert second["is_outdated"] is True
+    assert "review_resolution_unknown" not in document["limitations"]
+
+
+def test_review_threads_graphql_errors_are_partial(tmp_path: Path) -> None:
+    def graphql_handler(_input_text: str | None) -> CommandResult:
+        return http_response(
+            200,
+            {
+                "data": {},
+                "errors": [{"message": "reviewThreads unavailable"}],
+            },
+        )
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    result = collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+
+    document = load_pr_document(store, 10)
+    assert document is not None
+    assert result.coverage[0]["coverage_status"] == "partial"
+    assert document["coverage"]["review_threads"] == "unavailable"
+    assert document["review_threads"]["status"] == "unavailable"
+    assert "review_threads_incomplete" in document["limitations"]
+    assert "review_resolution_unknown" in document["limitations"]
+
+
+def test_review_threads_total_count_truncation_is_visible(tmp_path: Path) -> None:
+    def graphql_handler(_input_text: str | None) -> CommandResult:
+        return http_response(
+            200,
+            {
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "reviewThreads": {
+                                "totalCount": 2,
+                                "pageInfo": {
+                                    "hasNextPage": False,
+                                    "endCursor": None,
+                                },
+                                "nodes": [
+                                    {
+                                        "id": "PRRT_1",
+                                        "isResolved": False,
+                                        "isOutdated": False,
+                                        "path": "src/cache.py",
+                                        "line": 42,
+                                        "startLine": None,
+                                        "comments": {
+                                            "totalCount": 1,
+                                            "nodes": [{"databaseId": 8001}],
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    }
+                }
+            },
+        )
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+
+    document = load_pr_document(store, 10)
+    assert document is not None
+    assert document["review_threads"]["status"] == "partial"
+    assert document["review_threads"]["truncated"] is True
+    assert (
+        document["review_threads"]["truncation_reason"]
+        == "review_threads_truncated"
+    )
+    assert "review_threads_truncated" in document["limitations"]
 
 
 def test_default_quota_covers_all_candidates(tmp_path: Path) -> None:
@@ -527,7 +737,7 @@ def test_nested_pagination_follows_link_headers(tmp_path: Path) -> None:
     assert document["files"]["total_known"] == 101
     assert document["files"]["truncated"] is False
     assert document["files"]["status"] == "complete"
-    assert result.coverage[0]["pages"] == 8
+    assert result.coverage[0]["pages"] == 9
 
 
 def test_pagination_duplicates_are_deduped_and_reported(tmp_path: Path) -> None:
@@ -1097,15 +1307,20 @@ def _run_cli_collect(
     )
 
     def factory(client_store, budget, **kwargs):
+        def runner(argv: list[str], input_text: str | None) -> CommandResult:
+            if "graphql" in argv[:4]:
+                return empty_review_threads_response()
+            return handler(
+                argv[argv.index("--include") + 1],
+                parse_params(argv),
+                _headers(argv),
+            )
+
         return GitHubClient(
             client_store,
             budget,
             gh_path="gh",
-            runner=lambda argv, input_text: handler(
-                argv[argv.index("--include") + 1],
-                parse_params(argv),
-                _headers(argv),
-            ),
+            runner=runner,
             sleep=lambda _seconds: None,
             now=lambda: NOW,
             initial_usage=kwargs.get("initial_usage"),
@@ -1186,7 +1401,7 @@ def test_second_run_with_all_unchanged_is_complete(tmp_path: Path) -> None:
     assert result.counts["skipped_unchanged"] == 2
     assert result.counts["details_written"] == 0
     assert result.coverage[0]["coverage_status"] == "complete"
-    assert result.coverage[0]["pages"] == 10
+    assert result.coverage[0]["pages"] == 12
     assert "pr_detail_incomplete" not in result.selection["limitations"]
     assert "repos/acme/demo/pulls/10/files" not in calls
     assert "repos/acme/demo/pulls/10/commits" not in calls
@@ -1292,6 +1507,169 @@ def test_resume_refreshes_mutable_state_without_head_change(tmp_path: Path) -> N
     assert second["body"]["sha256"] is not None
     assert store.read_blob(second["body"]["sha256"]) == new_body.encode()
     assert second["observed_at"] == "2026-11-01T08:00:20Z"
+
+
+def test_resume_refreshes_review_thread_resolution_without_head_change(
+    tmp_path: Path,
+) -> None:
+    state = {"resolved": False}
+
+    def graphql_handler(_input_text: str | None) -> CommandResult:
+        return http_response(
+            200,
+            {
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "reviewThreads": {
+                                "totalCount": 1,
+                                "pageInfo": {
+                                    "hasNextPage": False,
+                                    "endCursor": None,
+                                },
+                                "nodes": [
+                                    {
+                                        "id": "PRRT_1",
+                                        "isResolved": state["resolved"],
+                                        "isOutdated": False,
+                                        "path": "src/cache.py",
+                                        "line": 42,
+                                        "startLine": None,
+                                        "comments": {
+                                            "totalCount": 1,
+                                            "nodes": [{"databaseId": 8001}],
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    }
+                }
+            },
+        )
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+    first = load_pr_document(store, 10)
+    assert first is not None
+    assert first["review_threads"]["items"][0]["is_resolved"] is False
+
+    state["resolved"] = True
+    client2 = build_client(
+        store,
+        default_handler(),
+        graphql_handler=graphql_handler,
+    )
+    result = collect_pull_requests(
+        client2,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:20Z",
+    )
+
+    second = load_pr_document(store, 10)
+    assert second is not None
+    assert result.counts["details_written"] == 1
+    assert result.counts["skipped_unchanged"] == 0
+    assert second["review_threads"]["items"][0]["is_resolved"] is True
+    assert second["observed_at"] == "2026-11-01T08:00:20Z"
+
+
+def test_resume_preserves_complete_document_when_review_threads_unavailable(
+    tmp_path: Path,
+) -> None:
+    def good_graphql(_input_text: str | None) -> CommandResult:
+        return http_response(
+            200,
+            {
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "reviewThreads": {
+                                "totalCount": 1,
+                                "pageInfo": {
+                                    "hasNextPage": False,
+                                    "endCursor": None,
+                                },
+                                "nodes": [
+                                    {
+                                        "id": "PRRT_1",
+                                        "isResolved": True,
+                                        "isOutdated": False,
+                                        "path": "src/cache.py",
+                                        "line": 42,
+                                        "startLine": None,
+                                        "comments": {
+                                            "totalCount": 1,
+                                            "nodes": [{"databaseId": 8001}],
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    }
+                }
+            },
+        )
+
+    def bad_graphql(_input_text: str | None) -> CommandResult:
+        return http_response(
+            200,
+            {"data": {}, "errors": [{"message": "unavailable"}]},
+        )
+
+    store, client = make_client(
+        tmp_path,
+        default_handler(),
+        graphql_handler=good_graphql,
+    )
+    seed(store, [10])
+    collect_pull_requests(
+        client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+    first = load_pr_document(store, 10)
+    assert first is not None
+    assert first["coverage"]["detail"] == "complete"
+
+    client2 = build_client(
+        store,
+        default_handler(),
+        graphql_handler=bad_graphql,
+    )
+    result = collect_pull_requests(
+        client2,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:20Z",
+    )
+
+    second = load_pr_document(store, 10)
+    assert second is not None
+    assert result.counts["details_written"] == 0
+    assert second["coverage"]["detail"] == "complete"
+    assert second["review_threads"]["status"] == "complete"
+    assert second["observed_at"] == first["observed_at"]
+    candidate = next(
+        item for item in result.selection["candidates"] if item["number"] == 10
+    )
+    assert candidate["skipped_reason"] == "refresh_incomplete"
 
 
 def test_resume_rereads_code_sections_when_base_sha_changes(tmp_path: Path) -> None:

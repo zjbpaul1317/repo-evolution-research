@@ -121,9 +121,22 @@ def derive_pr_detail_channel_status(
     )
 
 
+def pr_detail_sections(document: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    """Return the required sections plus optional newer sections when present."""
+    sections = {
+        key: document[key]
+        for key in PR_DETAIL_SECTIONS
+        if isinstance(document.get(key), Mapping)
+    }
+    threads = document.get("review_threads")
+    if isinstance(threads, Mapping):
+        sections["review_threads"] = threads
+    return sections
+
+
 def _pr_detail_status(document: Mapping[str, Any]) -> str:
     return derive_detail_status(
-        sections={key: document[key] for key in PR_DETAIL_SECTIONS},
+        sections=pr_detail_sections(document),
         head_changed=bool(document["head_changed"]),
         head_unverified=document["head_sha"] is None
         or document["head_sha_end"] is None,
@@ -192,14 +205,31 @@ def derive_limitations(document: Mapping[str, Any]) -> list[str]:
     for key in ("files", "commits", "issue_comments", "review_comments"):
         if document[key]["truncated"]:
             limitations.append(f"{key}_truncated")
-    duplicates = _duplicate_count(document, PR_DETAIL_SECTIONS)
+    duplicates = _duplicate_count(
+        document,
+        (*PR_DETAIL_SECTIONS, "review_threads"),
+    )
     if duplicates:
         limitations.append(f"pagination_duplicates:{duplicates}")
     if document["head_changed"]:
         limitations.append("head_changed")
     if document["head_sha"] is None or document["head_sha_end"] is None:
         limitations.append("head_unverified")
-    if document["reviews"]["items"] or document["review_comments"]["items"]:
+    threads = document.get("review_threads")
+    has_review_material = bool(
+        document["reviews"]["items"] or document["review_comments"]["items"]
+    )
+    if isinstance(threads, Mapping):
+        if threads.get("truncated"):
+            limitations.append("review_threads_truncated")
+        thread_status = threads.get("status")
+        if thread_status in ("partial", "unavailable"):
+            limitations.append("review_threads_incomplete")
+            if has_review_material:
+                limitations.append("review_resolution_unknown")
+        elif thread_status != "complete" and has_review_material:
+            limitations.append("review_resolution_unknown")
+    elif has_review_material:
         limitations.append("review_resolution_unknown")
     # The document's merged flag is `merged or merged_at`; this is the
     # research-model meaning and is intentionally used even when raw flags
@@ -302,5 +332,6 @@ __all__ = [
     "derive_pr_detail_channel_status",
     "derive_proposal_selection_limitations",
     "derive_selection_limitations",
+    "pr_detail_sections",
     "derive_stage_status",
 ]

@@ -339,6 +339,115 @@ def test_closing_keyword_rejects_commit_and_release_targets() -> None:
     assert counts["invalid_closing_targets"] == 1
 
 
+def test_revert_commit_becomes_verified_reverts_relation() -> None:
+    sha = "a" * 40
+    relations, external, _counts = run(
+        f"This reverts commit {sha}.",
+        index=NormalizeIndex.build([commit(sha)]),
+    )
+
+    assert external == {}
+    assert len(relations) == 1
+    relation = relations[0]
+    assert relation["type"] == "reverts"
+    assert relation["basis"] == "text_explicit"
+    assert relation["verification"] == "verified"
+    assert relation["to_id"] == entity_id(HOST, OWNER, NAME, "commit", sha)
+
+
+def test_revert_pr_reference_becomes_reverts_relation() -> None:
+    pull = make_entity(
+        entity_id=entity_id(HOST, OWNER, NAME, "pull_request", "9"),
+        kind="pull_request",
+        title="#9",
+        url=f"https://github.com/{OWNER}/{NAME}/pull/9",
+        observed_at=NOW,
+        number=9,
+    )
+    relations, external, _counts = run(
+        "Reverts #9.",
+        index=NormalizeIndex.build([pull]),
+    )
+
+    assert external == {}
+    assert len(relations) == 1
+    assert relations[0]["type"] == "reverts"
+    assert relations[0]["to_id"] == entity_id(HOST, OWNER, NAME, "pull_request", "9")
+
+
+def test_revert_to_issue_is_not_a_revert_target() -> None:
+    relations, _external, counts = run(
+        "Reverts #12.",
+        index=NormalizeIndex.build([issue(12)]),
+    )
+
+    assert relations == []
+    assert counts["invalid_revert_targets"] == 1
+
+
+def test_revert_keyword_requires_adjacent_reference() -> None:
+    relations, _external, _counts = run(
+        "This reverts the old behavior described in #12.",
+        index=NormalizeIndex.build([issue(12)]),
+    )
+
+    assert all(relation["type"] != "reverts" for relation in relations)
+
+
+def test_backport_pr_reference_becomes_backports_relation() -> None:
+    pull = make_entity(
+        entity_id=entity_id(HOST, OWNER, NAME, "pull_request", "9"),
+        kind="pull_request",
+        title="#9",
+        url=f"https://github.com/{OWNER}/{NAME}/pull/9",
+        observed_at=NOW,
+        number=9,
+    )
+    relations, external, _counts = run(
+        "Backports #9 to the release branch.",
+        index=NormalizeIndex.build([pull]),
+    )
+
+    assert external == {}
+    assert len(relations) == 1
+    relation = relations[0]
+    assert relation["type"] == "backports"
+    assert relation["basis"] == "text_explicit"
+    assert relation["verification"] == "verified"
+    assert relation["to_id"] == entity_id(HOST, OWNER, NAME, "pull_request", "9")
+
+
+def test_cherry_picked_from_commit_becomes_backports_relation() -> None:
+    sha = "b" * 40
+    relations, _external, _counts = run(
+        f"Cherry-picked from commit {sha}.",
+        index=NormalizeIndex.build([commit(sha)]),
+    )
+
+    assert len(relations) == 1
+    assert relations[0]["type"] == "backports"
+    assert relations[0]["to_id"] == entity_id(HOST, OWNER, NAME, "commit", sha)
+
+
+def test_backport_to_issue_is_not_a_backport_target() -> None:
+    relations, _external, counts = run(
+        "Backports #12.",
+        index=NormalizeIndex.build([issue(12)]),
+    )
+
+    assert relations == []
+    assert counts["invalid_backport_targets"] == 1
+
+
+def test_backport_keyword_requires_adjacent_reference() -> None:
+    relations, _external, _counts = run(
+        "This is a backport of the behavior described in #12.",
+        index=NormalizeIndex.build([issue(12)]),
+    )
+
+    assert all(relation["type"] != "backports" for relation in relations)
+
+
 def test_release_body_produces_release_note_mentions() -> None:
     relations, _external, _counts = run(
         "See #12",

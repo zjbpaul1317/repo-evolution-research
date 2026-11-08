@@ -37,6 +37,36 @@ def test_pack_index_is_deterministic_and_fits_budget(tmp_path: Path) -> None:
         assert len(text) <= 2200
 
 
+def test_review_thread_summary_counts_resolution() -> None:
+    item = {
+        "kind": "pull_request",
+        "entity_id": "github.com/acme/demo/pull/101",
+    }
+    document = {
+        "number": 101,
+        "review_threads": {
+            "status": "complete",
+            "fetched": 3,
+            "items": [
+                {"is_resolved": True, "is_outdated": False},
+                {"is_resolved": False, "is_outdated": True},
+                {"is_resolved": True, "is_outdated": True},
+            ],
+        },
+    }
+
+    assert packs._review_thread_summary(item, {101: document}) == {
+        "status": "complete",
+        "fetched": 3,
+        "resolved": 2,
+        "unresolved": 1,
+        "outdated": 2,
+    }
+    assert packs._review_thread_summary(
+        {**item, "kind": "issue"}, {101: document}
+    ) is None
+
+
 def test_pack_budget_protects_agent_selected_items(tmp_path: Path) -> None:
     store, config, manifest, candidates = candidates_for(
         tmp_path,

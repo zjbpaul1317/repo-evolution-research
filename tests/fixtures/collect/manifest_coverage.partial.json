@@ -9,7 +9,7 @@
     "fetched_count": 1,
     "observed_end": "2026-11-01T08:00:10Z",
     "observed_start": "2026-11-01T08:00:10Z",
-    "pages": 7,
+    "pages": 8,
     "query": "#10",
     "query_scope": "deep_read_selection",
     "remaining_cursor": null,

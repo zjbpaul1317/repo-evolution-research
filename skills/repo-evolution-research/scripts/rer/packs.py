@@ -67,10 +67,17 @@ def build_pack_index(
         )
     groups = _groups(candidates)
     previews = _previews(store, candidates, research_handoff=research_handoff)
+    pr_documents = {
+        int(document["number"]): document
+        for document in load_pr_documents(store)
+    }
     for group in groups:
         for item in group["items"]:
             values = previews.get(str(item["entity_id"]), [])
             item["preview_text"] = str(values[0].get("text") or "") if values else ""
+            thread_summary = _review_thread_summary(item, pr_documents)
+            if thread_summary is not None:
+                item["review_threads"] = thread_summary
             item["evidence_previews"] = values if _is_research_item(
                 item, research_handoff=research_handoff
             ) else []
@@ -485,6 +492,34 @@ def _useful_excerpt(value: Mapping[str, Any], metadata: Mapping[str, int]) -> bo
     )
 
 
+def _review_thread_summary(
+    item: Mapping[str, Any],
+    documents: Mapping[int, Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    if item.get("kind") != "pull_request":
+        return None
+    entity_identifier = str(item.get("entity_id") or "")
+    tail = entity_identifier.rsplit("/", 1)[-1]
+    if not tail.isdigit():
+        return None
+    document = documents.get(int(tail))
+    if not isinstance(document, Mapping):
+        return None
+    section = document.get("review_threads")
+    if not isinstance(section, Mapping):
+        return None
+    threads = [
+        value for value in section.get("items") or [] if isinstance(value, Mapping)
+    ]
+    return {
+        "status": str(section.get("status") or "unknown"),
+        "fetched": int(section.get("fetched") or 0),
+        "resolved": sum(1 for value in threads if value.get("is_resolved") is True),
+        "unresolved": sum(1 for value in threads if value.get("is_resolved") is False),
+        "outdated": sum(1 for value in threads if value.get("is_outdated") is True),
+    }
+
+
 def _previews(
     store: Any,
     candidates: Mapping[str, Any],
@@ -852,8 +887,16 @@ def _render_item(
         f"- raw: {', '.join(raw_refs) or '-'}",
         f"- evidence: {evidence or '-'}",
         f"- missing: {', '.join(str(value) for value in missing) or '-'}",
-        "",
     ]
+    threads = item.get("review_threads")
+    if isinstance(threads, Mapping):
+        lines.append(
+            f"- review_threads: status={threads.get('status') or '-'} | "
+            f"resolved={threads.get('resolved')} | "
+            f"unresolved={threads.get('unresolved')} | "
+            f"outdated={threads.get('outdated')}"
+        )
+    lines.append("")
     if research:
         previews = item.get("evidence_previews") or []
         lines.extend(["#### Evidence excerpts", ""])
@@ -1009,6 +1052,11 @@ def _item_index(item: Mapping[str, Any]) -> dict[str, Any]:
         "agent_selected": bool(item.get("agent_selected")),
         "recommended": bool(item.get("recommended")),
         "budget_fit": str(item.get("budget_fit") or "recorded"),
+        "review_threads": (
+            dict(item["review_threads"])
+            if isinstance(item.get("review_threads"), Mapping)
+            else None
+        ),
         "preview": {
             "chars": min(len(text), cap),
             "original_chars": original,

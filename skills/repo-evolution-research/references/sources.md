@@ -40,7 +40,8 @@
 ## PR 深读
 
 - 从活动候选中按 `min(max_deep_prs, max_deep_entities) - agent_pr_reserve` 选择初始深读 PR：quick 6 / standard 18 / deep 36；Agent selection 可继续使用预留名额，最多到 `min(max_deep_prs, max_deep_entities)`。standard 初始约 11 个 merged + 7 个 open。所有决策写入 `analysis/pr-selection.json`。
-- 每个选中 PR 读取 detail、files、commits、issue comments、reviews、review comments，写一份权威文档 `raw/pr-details/<number>.json`。长文本和 patch 进 `blobs/`；entity 的 `raw_state.deep_read` 只存 `detail_path`、`head_sha`、`observed_at` 指针。
+- 每个选中 PR 读取 detail、files、commits、issue comments、reviews、review comments，并通过 GraphQL 读取 review thread 的 `isResolved` / `isOutdated` / 关联 comment databaseId，写一份权威文档 `raw/pr-details/<number>.json`。长文本和 patch 进 `blobs/`；entity 的 `raw_state.deep_read` 只存 `detail_path`、`head_sha`、`observed_at` 指针。
+- `review_threads` 只保存线程元数据和 comment ID，评论正文仍在 `review_comments`；GraphQL 失败或权限不足时 section 记 `unavailable` / `partial`，不伪造 `isResolved=false`。线程可随 review 操作变化，因此每次重建 PR 文档都重读，不复用旧 section。阅读包只展示 status/fetched/resolved/unresolved/outdated 统计，完整线程通过 raw refs 展开。
 - `head.sha` 在读取开始和结束之间变化时置 `head_changed`，PR 标 `partial`；不能当作一次一致观察。`squash_rebase_unverified` 表示未重建最终合并补丁。
 - 当前版本不抓完整 diff：`pr_detail.diff.status` 恒为 `not_requested`，schema 字段保留给未来选项。
 - `files` 上限 3000、`commits` 上限 250；二进制或超大文件可能没有 patch。这些是固有缺口，记录在 coverage/limitations，但 `pr_detail` 只在 `unavailable` 时阻塞运行。
@@ -64,6 +65,7 @@
 - imported source 的正文按内容寻址 `blobs/<sha256>`；来源元数据写 `imported/<source_key>/<sha256>.json`，`source_key` 由 `source_kind` / `entity_id` / `source_url` / `source_revision` 决定。不同 URL/entity 或不同 revision 不共享来源记录；重复检索追加 `observations`，不覆盖首次观察。
 - 非 UTF-8、过大、缺失或不可访问只记录 status/limitation，不能伪造文本。固定 revision + path 且 blob/hash/bytes 校验通过时可复用；revision 或 path 变化必须重读。
 - 候选上限 `MAX_DOCS=40`。`docs=unavailable` 只在全部候选请求失败时成立；`not_found`、`too_large`、`unsupported_encoding`、`decode_error` 只记 `partial`；`include_docs=false` 记 `not_requested`；没有文本候选记 `not_applicable`。
+- 设计/RFC/架构/roadmap 文档额外读取最多 10 篇、每篇最多 20 条的提交历史，写入可选 `history` section；历史请求失败只记录 `doc_history_unavailable` / `doc_history_partial`，不把正文读取降级。固定 revision + path 的历史可复用，`--force` 重新读取。
 - Doc entity 只投影当前 `default_branch_sha` 的快照；旧 revision 只作为归档，不进入 `normalized/entities.jsonl`。
 
 ## Issue / Discussion 深读

@@ -13,6 +13,7 @@ from ..discovery import read_text_file
 from ..errors import (
     BudgetExceededError,
     GitHubError,
+    GitHubNotFoundError,
     InternalError,
     RERError,
     StoreError,
@@ -30,9 +31,13 @@ from .base import (
 from .entity_store import merge_entity
 from .progress import coverage_entry
 from .texts import blob_problem, text_ref, text_ref_problem
+from .values import as_optional_str, get_in, iso_or_none
 
 DOC_DIR = "raw/docs"
 MAX_DOCS = 40
+HISTORY_CAP = 20
+MAX_HISTORY_DOCS = 10
+_HISTORY_ROLES = frozenset({"design", "rfc", "architecture", "roadmap"})
 TEXT_EXTENSIONS = frozenset(
     {".md", ".markdown", ".rst", ".txt", ".adoc", ".ipynb"}
 )
@@ -64,6 +69,7 @@ def collect_documents(
     source_profile: Mapping[str, Any],
     revision: str,
     include_docs: bool = True,
+    force: bool = False,
 ) -> DocCollection:
     store = context.store
     started = context.now()
@@ -105,6 +111,13 @@ def collect_documents(
         active_revision=revision,
     )
     profile_files = _profile_files(source_profile)
+    history_paths: list[str] = []
+    for path, role in candidates:
+        if role in _HISTORY_ROLES and path not in history_paths:
+            history_paths.append(path)
+        if len(history_paths) >= MAX_HISTORY_DOCS:
+            break
+    history_set = set(history_paths)
     current: list[dict[str, Any]] = []
     statuses: dict[str, int] = {}
     try:
@@ -119,6 +132,8 @@ def collect_documents(
                     name=name,
                     profile_files=profile_files,
                     counts=counts,
+                    include_history=path in history_set,
+                    force=force,
                 )
             except BudgetExceededError as exc:
                 if is_run_budget_error(exc):
@@ -197,6 +212,9 @@ def _empty_counts(
         "read": 0,
         "failed": 0,
         "budget_skipped": 0,
+        "history_requested": 0,
+        "history_read": 0,
+        "history_failed": 0,
     }
 
 
@@ -210,17 +228,29 @@ def _snapshot_for(
     name: str,
     profile_files: Mapping[str, Mapping[str, Any]],
     counts: dict[str, int],
+    include_history: bool,
+    force: bool,
 ) -> dict[str, Any]:
     store = context.store
     existing = _reusable_snapshot(store, revision, path)
     if existing is not None:
         counts["reused"] += 1
+        if include_history and (force or "history" not in existing):
+            updated = _attach_history(
+                context,
+                existing,
+                path=path,
+                revision=revision,
+                counts=counts,
+            )
+            write_doc_snapshot(store, updated)
+            return updated
         return existing
     profile_entry = profile_files.get(path)
     if _profile_entry_usable(profile_entry):
         try:
             counts["profile_reused"] += 1
-            return _build_doc_snapshot(
+            document = _build_doc_snapshot(
                 store,
                 _profile_result(path, profile_entry),
                 host=host,
@@ -229,6 +259,15 @@ def _snapshot_for(
                 revision=revision,
                 observed_at=context.now(),
             )
+            if include_history:
+                document = _attach_history(
+                    context,
+                    document,
+                    path=path,
+                    revision=revision,
+                    counts=counts,
+                )
+            return document
         except StoreError:
             counts["profile_reused"] -= 1
     try:
@@ -256,8 +295,111 @@ def _snapshot_for(
         revision=revision,
         observed_at=context.now(),
     )
+    if include_history:
+        document = _attach_history(
+            context,
+            document,
+            path=path,
+            revision=revision,
+            counts=counts,
+        )
     counts["fetched"] += 1
     return document
+
+
+def _attach_history(
+    context: CollectContext,
+    document: Mapping[str, Any],
+    *,
+    path: str,
+    revision: str,
+    counts: dict[str, int],
+) -> dict[str, Any]:
+    updated = dict(document)
+    updated["history"] = _read_history(
+        context,
+        path=path,
+        revision=revision,
+        counts=counts,
+    )
+    updated["limitations"] = derive_doc_limitations(updated)
+    validate_doc_snapshot(updated)
+    return updated
+
+
+def _read_history(
+    context: CollectContext,
+    *,
+    path: str,
+    revision: str,
+    counts: dict[str, int],
+) -> dict[str, Any]:
+    counts["history_requested"] += 1
+    owner = str(context.repository["owner"])
+    name = str(context.repository["name"])
+    try:
+        data = context.client.rest(
+            f"repos/{owner}/{name}/commits",
+            params={"path": path, "sha": revision, "per_page": HISTORY_CAP},
+        )
+    except BudgetExceededError as exc:
+        if is_run_budget_error(exc):
+            mark_run_budget_exhausted(context)
+        counts["history_failed"] += 1
+        return _history_section("partial", 0, "budget_exceeded", [])
+    except GitHubNotFoundError:
+        counts["history_failed"] += 1
+        return _history_section("unavailable", 0, "not_found", [])
+    except FATAL_ERRORS:
+        raise
+    except GitHubError:
+        counts["history_failed"] += 1
+        return _history_section("unavailable", 0, "github_error", [])
+    if not isinstance(data, list):
+        counts["history_failed"] += 1
+        return _history_section("unavailable", 0, "invalid_response", [])
+    items: list[dict[str, Any]] = []
+    for raw in data:
+        if not isinstance(raw, Mapping):
+            continue
+        sha = raw.get("sha")
+        if not isinstance(sha, str) or not FULL_SHA_RE.fullmatch(sha):
+            continue
+        commit = raw.get("commit") if isinstance(raw.get("commit"), Mapping) else {}
+        items.append(
+            {
+                "sha": sha,
+                "message": text_ref(context.store, commit.get("message")),
+                "author": as_optional_str(get_in(commit, "author", "name")),
+                "date": iso_or_none(get_in(commit, "author", "date")),
+                "url": as_optional_str(raw.get("html_url")),
+            }
+        )
+    counts["history_read"] += 1
+    truncated = len(items) >= HISTORY_CAP
+    return _history_section(
+        "partial" if truncated else "complete",
+        len(items),
+        f"history_limit_{HISTORY_CAP}" if truncated else None,
+        items,
+    )
+
+
+def _history_section(
+    status: str,
+    fetched: int,
+    reason: str | None,
+    items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "fetched": fetched,
+        "total_known": None,
+        "truncated": status in ("partial", "unavailable"),
+        "truncation_reason": reason,
+        "duplicates": 0,
+        "items": items,
+    }
 
 
 def _docs_status(
@@ -584,6 +726,26 @@ def validate_doc_snapshot(document: Mapping[str, Any]) -> None:
             source="doc_store.invariant",
             details={"path": document.get("path")},
         )
+    history = document.get("history")
+    if isinstance(history, Mapping):
+        if history["fetched"] != len(history["items"]):
+            raise StoreError(
+                "doc_snapshot.history.fetched 与 items 数量不一致",
+                source="doc_store.invariant",
+                details={"path": document.get("path")},
+            )
+        if history["status"] == "complete" and history["truncated"]:
+            raise StoreError(
+                "doc_snapshot.history.status=complete 时不能 truncated",
+                source="doc_store.invariant",
+                details={"path": document.get("path")},
+            )
+        if history["status"] == "not_requested" and history["items"]:
+            raise StoreError(
+                "doc_snapshot.history.status=not_requested 时 items 必须为空",
+                source="doc_store.invariant",
+                details={"path": document.get("path")},
+            )
     if document["limitations"] != derive_doc_limitations(document):
         raise StoreError(
             "doc_snapshot.limitations 不是从文档派生",
@@ -599,6 +761,15 @@ def derive_doc_limitations(document: Mapping[str, Any]) -> list[str]:
         limitations.add(f"doc_{status}")
     elif document["text"]["sha256"] is None:
         limitations.add("empty_document")
+    history = document.get("history")
+    if isinstance(history, Mapping):
+        history_status = history.get("status")
+        if history_status == "unavailable":
+            limitations.add("doc_history_unavailable")
+        elif history_status == "partial":
+            limitations.add("doc_history_partial")
+            if history.get("truncated"):
+                limitations.add("doc_history_truncated")
     return sorted(limitations)
 
 

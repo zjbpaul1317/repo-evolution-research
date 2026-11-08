@@ -24,10 +24,25 @@ _CLOSING_KINDS = frozenset(
     {"pull_request_body", "pull_request_comment", "commit_message"}
 )
 _CLOSING_TARGET_KINDS = ("issue", "pull_request")
+_REVERT_TARGET_KINDS = ("pull_request", "commit")
+_REVERT_KINDS = frozenset(
+    {"pull_request_body", "pull_request_comment", "commit_message"}
+)
+_BACKPORT_TARGET_KINDS = ("pull_request", "commit")
+_BACKPORT_KINDS = frozenset(
+    {"pull_request_body", "pull_request_comment", "commit_message"}
+)
 _CLOSING_RE = re.compile(
     r"\b(?P<keyword>fix(?:es|s)?|closes?|resolves?)\b",
     re.IGNORECASE,
 )
+_REVERT_RE = re.compile(r"\b(?:this\s+)?reverts?\b", re.IGNORECASE)
+_REVERT_COMMIT_RE = re.compile(r"\s+commit\s+`?", re.IGNORECASE)
+_BACKPORT_RE = re.compile(
+    r"\b(?:backports?|cherry-picks?|cherry-picked\s+from)\b",
+    re.IGNORECASE,
+)
+_BACKPORT_COMMIT_RE = re.compile(r"\s+commit\s+`?", re.IGNORECASE)
 _OBJECT_URL_RE = re.compile(
     r"https?://(?P<host>[A-Za-z0-9][A-Za-z0-9.-]*)"
     r"/(?P<owner>[A-Za-z0-9][A-Za-z0-9._-]*)"
@@ -74,8 +89,10 @@ _COUNT_KEYS = (
     "external_entity_limit",
     "ignored_code_refs",
     "ignored_quote_refs",
+    "invalid_backport_targets",
     "invalid_closing_targets",
     "invalid_external_refs",
+    "invalid_revert_targets",
     "self_refs",
     "unresolved_refs",
 )
@@ -176,6 +193,30 @@ class RelationBuilder:
                     relation_type="closing_reference",
                     verification="candidate",
                 )
+        revert_spans: list[tuple[int, int]] = []
+        if source.source_kind in _REVERT_KINDS:
+            for ref in _revert_refs(masked):
+                revert_spans.append((ref.start, ref.end))
+                self._add_reference(
+                    source,
+                    block,
+                    evidence_id,
+                    ref,
+                    relation_type="reverts",
+                    verification=None,
+                )
+        backport_spans: list[tuple[int, int]] = []
+        if source.source_kind in _BACKPORT_KINDS:
+            for ref in _backport_refs(masked):
+                backport_spans.append((ref.start, ref.end))
+                self._add_reference(
+                    source,
+                    block,
+                    evidence_id,
+                    ref,
+                    relation_type="backports",
+                    verification=None,
+                )
         allow_bare = source.source_kind != "doc_content"
         allow_sha = source.source_kind != "doc_content"
         relation_type = (
@@ -188,7 +229,10 @@ class RelationBuilder:
             allow_bare_numbers=allow_bare,
             allow_sha=allow_sha,
         ):
-            if any(_overlaps(ref, start, end) for start, end in closing_spans):
+            if any(
+                _overlaps(ref, start, end)
+                for start, end in (*closing_spans, *revert_spans, *backport_spans)
+            ):
                 continue
             self._add_reference(
                 source,
@@ -216,6 +260,18 @@ class RelationBuilder:
             and ref.kind not in ("number", "issue", "pull_request")
         ):
             self.counts["invalid_closing_targets"] += 1
+            return
+        if (
+            relation_type == "reverts"
+            and ref.kind not in ("number", "issue", "pull_request", "commit")
+        ):
+            self.counts["invalid_revert_targets"] += 1
+            return
+        if (
+            relation_type == "backports"
+            and ref.kind not in ("number", "issue", "pull_request", "commit")
+        ):
+            self.counts["invalid_backport_targets"] += 1
             return
         if ref.kind == "number":
             if ref.owner is not None and ref.name is not None:
@@ -276,6 +332,18 @@ class RelationBuilder:
             and target.get("kind") not in _CLOSING_TARGET_KINDS
         ):
             self.counts["invalid_closing_targets"] += 1
+            return
+        if (
+            relation_type == "reverts"
+            and target.get("kind") not in _REVERT_TARGET_KINDS
+        ):
+            self.counts["invalid_revert_targets"] += 1
+            return
+        if (
+            relation_type == "backports"
+            and target.get("kind") not in _BACKPORT_TARGET_KINDS
+        ):
+            self.counts["invalid_backport_targets"] += 1
             return
         target_id = str(target["id"])
         if target_id == source.entity_id:
@@ -542,6 +610,38 @@ def _sha_refs(text: str) -> list[Reference]:
         )
         for match in _SHA_RE.finditer(text)
     ]
+
+
+def _revert_refs(text: str) -> list[Reference]:
+    refs: list[Reference] = []
+    limit = len(text)
+    for match in _REVERT_RE.finditer(text):
+        position = match.end()
+        commit_prefix = _REVERT_COMMIT_RE.match(text, position)
+        if commit_prefix is not None:
+            position = commit_prefix.end()
+        else:
+            position = _skip_closing_separators(text, position, limit)
+        ref = _match_ref_at(text, position, limit)
+        if ref is not None:
+            refs.append(ref)
+    return refs
+
+
+def _backport_refs(text: str) -> list[Reference]:
+    refs: list[Reference] = []
+    limit = len(text)
+    for match in _BACKPORT_RE.finditer(text):
+        position = match.end()
+        commit_prefix = _BACKPORT_COMMIT_RE.match(text, position)
+        if commit_prefix is not None:
+            position = commit_prefix.end()
+        else:
+            position = _skip_closing_separators(text, position, limit)
+        ref = _match_ref_at(text, position, limit)
+        if ref is not None:
+            refs.append(ref)
+    return refs
 
 
 def _closing_refs(text: str) -> list[Reference]:

@@ -49,6 +49,7 @@
             "documents",
             "supersedes",
             "reverts",
+            "backports",
             "duplicates",
             "related_candidate"
           ]
