@@ -10,7 +10,13 @@ import test_ranking as ranking_helpers
 
 from rer import packs, ranking
 from rer.config import build_config
-from rer.models import build_manifest, make_evidence, make_locator, validate_document
+from rer.models import (
+    build_manifest,
+    entity_id,
+    make_evidence,
+    make_locator,
+    validate_document,
+)
 
 
 def candidates_for(tmp_path: Path, **budget) -> tuple:
@@ -68,9 +74,17 @@ def test_review_thread_summary_counts_resolution() -> None:
 
 
 def test_doc_history_summary_exposes_latest_commit() -> None:
+    revision = "a" * 40
     item = {
         "kind": "doc",
-        "entity_id": "github.com/acme/demo/" + "a" * 40 + "/docs/design.md",
+        "entity_id": entity_id(
+            "github.com",
+            "acme",
+            "demo",
+            "doc",
+            "docs/design.md",
+            revision=revision,
+        ),
     }
     document = {
         "path": "docs/design.md",
@@ -85,7 +99,10 @@ def test_doc_history_summary_exposes_latest_commit() -> None:
         },
     }
 
-    assert packs._doc_history_summary(item, {"docs/design.md": document}) == {
+    assert packs._doc_history_summary(
+        item,
+        {(revision, "docs/design.md"): document},
+    ) == {
         "status": "complete",
         "fetched": 2,
         "latest_sha": "b" * 40,
@@ -93,8 +110,56 @@ def test_doc_history_summary_exposes_latest_commit() -> None:
         "truncated": False,
     }
     assert packs._doc_history_summary(
-        {**item, "kind": "issue"}, {"docs/design.md": document}
+        {**item, "kind": "issue"},
+        {(revision, "docs/design.md"): document},
     ) is None
+
+
+def test_doc_history_summary_matches_revision_and_decodes_path() -> None:
+    new_revision = "a" * 40
+    old_revision = "b" * 40
+    path = "docs/设计 notes.md"
+    item = {
+        "kind": "doc",
+        "entity_id": entity_id(
+            "github.com",
+            "acme",
+            "demo",
+            "doc",
+            path,
+            revision=new_revision,
+        ),
+    }
+    old_document = {
+        "path": path,
+        "history": {
+            "status": "complete",
+            "fetched": 1,
+            "truncated": False,
+            "items": [{"sha": "c" * 40, "date": "2026-09-01T08:00:00Z"}],
+        },
+    }
+    new_document = {
+        "path": path,
+        "history": {
+            "status": "complete",
+            "fetched": 1,
+            "truncated": False,
+            "items": [{"sha": "d" * 40, "date": "2026-10-01T08:00:00Z"}],
+        },
+    }
+    documents = {
+        (old_revision, path): old_document,
+        (new_revision, path): new_document,
+    }
+
+    assert packs._doc_history_summary(item, documents) == {
+        "status": "complete",
+        "fetched": 1,
+        "latest_sha": "d" * 40,
+        "latest_date": "2026-10-01T08:00:00Z",
+        "truncated": False,
+    }
 
 
 def test_pack_budget_protects_agent_selected_items(tmp_path: Path) -> None:

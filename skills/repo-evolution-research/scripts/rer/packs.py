@@ -7,6 +7,7 @@ import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from typing import Any
+from urllib.parse import unquote
 
 from . import SCHEMA_VERSION
 from .collectors.docs import load_doc_snapshots
@@ -73,7 +74,7 @@ def build_pack_index(
         for document in load_pr_documents(store)
     }
     doc_documents = {
-        str(document["path"]): document
+        (str(document["revision"]), str(document["path"])): document
         for document in load_doc_snapshots(store)
     }
     for group in groups:
@@ -502,7 +503,7 @@ def _useful_excerpt(value: Mapping[str, Any], metadata: Mapping[str, int]) -> bo
 
 def _doc_history_summary(
     item: Mapping[str, Any],
-    documents: Mapping[str, Mapping[str, Any]],
+    documents: Mapping[tuple[str, str], Mapping[str, Any]],
 ) -> dict[str, Any] | None:
     if item.get("kind") != "doc":
         return None
@@ -510,7 +511,7 @@ def _doc_history_summary(
     parts = entity_identifier.split("/", 4)
     if len(parts) != 5:
         return None
-    document = documents.get(parts[4])
+    document = documents.get((parts[3], unquote(parts[4])))
     if not isinstance(document, Mapping):
         return None
     section = document.get("history")
