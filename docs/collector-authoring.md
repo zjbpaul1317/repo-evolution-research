@@ -190,7 +190,7 @@ if context.progress is not None:
   `role_hints`。
 - 不新增 checkpoint 文件、coverage 聚合层或状态字符串。
 - 状态可从 section 真值推导，且 partial 不会被写成 complete。
-- 新增或修改 schema 必须 bump `SCHEMA_VERSION` 并更新 fixtures。
+- 新增或修改 schema 必须先评估兼容性并更新 fixtures；会改变快照结构或枚举、且需要旧工具读取新快照时，必须 bump `SCHEMA_VERSION`。当前处于预发布阶段，`1.3` 的增量字段只保证新工具读取旧快照，不保证旧工具读取新快照。
 
 ## 9. 契约清单
 

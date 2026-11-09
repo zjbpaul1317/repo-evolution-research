@@ -28,6 +28,7 @@
 ### 兼容性
 
 - 快照 schema 仍为 `1.3`，不需要迁移；已有 1.3 run 可继续读取和重新 prepare。
+- 1.3 内新增的 review thread、文档历史、pack 摘要和 `backports` 是增量字段；新工具可读取旧 1.3 快照，但 0.2.8 旧工具不保证读取含这些字段/枚举的新快照。若需要双向兼容，应单独升级 schema 版本并说明迁移方式。
 - `collect` 的兼容检查以 manifest `schema_version` 为准，不因工具版本从 0.2.8 升到 0.2.9 而拒绝。
 - ETag 缓存 key 加入 page；升级后旧缓存条目会 miss 一次并重新获取，不影响快照或证据。
 - 仍从源码运行，不提供 PyPI 包；报告固定中文。
@@ -50,3 +51,4 @@
 - e2e 结果：research 2 个主题、21 条 claim、3 个 capability、2 个 unknown；validate `ok=true`（0 errors / 13 warnings）；render 22,638 chars，sha256 `3da972002cc8b8117e6e66b4b5b9e4d4c013d5fcbbb6ea69673e78353caf8995`；audit `ok=true`。
 - 该 run 的 manifest `tool_version` 为 0.2.8、schema 1.3；报告由 0.2.9 代码 validate/render，schema 未变化。
 - 分页 ETag 由 `tests/test_github.py` 的 fake transport 覆盖；本轮没有为分页 ETag 重新 collect 真实 run。
+- 两轮真实 collect 冒烟（2026-11-09）：`vllm-project/router` 14 天窗口，run `20261109T023902Z-dbae697a`；首轮 49 次请求、深读 1 个 PR，第二轮 `--force` 后 84 次请求，`deep_entities_used=2`、`pr_quota=0`，已有 PR #410 仍为 `selected`/`already_read`，`pr_detail` coverage 为 `complete`（expected/fetched 1），`audit ok=true`。
