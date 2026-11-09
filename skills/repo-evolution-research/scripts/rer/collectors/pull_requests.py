@@ -36,6 +36,7 @@ from .selection import (
     choose,
     derive_fetched_count,
     derive_selection_counts,
+    preselect_already_read,
     quota_for_budget,
 )
 from .status import (
@@ -121,6 +122,7 @@ def collect_pull_requests(
         client.budget, client.deep_entities_used()
     )
     choose(candidates, pr_quota, merged_quota, open_quota)
+    preselect_already_read(candidates, existing)
     selected = [candidate for candidate in candidates if candidate.selected]
     selected_numbers = {candidate.number for candidate in selected}
     completed: set[int] = set()

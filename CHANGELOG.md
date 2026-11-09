@@ -12,10 +12,12 @@
 
 ### 修复
 
-- 阅读包文档历史摘要按 `(revision, path)` 精确匹配，并解码 entity ID 中的 percent-encoding；避免多个 revision 同路径时展示旧历史，以及含空格/非 ASCII 路径时摘要丢失。
+- 再次自动 `collect` 时保留已有 PR 深读：已有权威文档以 `already_read` 重新选中并刷新可变 section，不占新的 deep entity 名额；未变化记 `skipped_unchanged`，避免 `pr-selection` 清空、`pr_detail` coverage 被误记为 `not_requested`。
+- 文档历史摘要按 `(revision, path)` 精确匹配，并解码 entity ID 中的 percent-encoding；避免多个 revision 同路径时展示旧历史，以及含空格/非 ASCII 路径时摘要丢失。
 - `reverts` / `backports` 支持同一关键词后的多个相邻引用（如 `Reverts #12 and #13`），不再只记录第一个。
+- `backports` 识别 Git 默认的 `(cherry picked from commit <sha>)` 文本，不再只识别带连字符的 `Cherry-picked from`。
 - PR 部分读取即使关闭 comments/reviews，也会重读 review thread 元数据；缺失 comments connection 时明确标记 `partial` 与截断原因。
-- 文档历史恰好 20 条时不再误报截断；读取时多请求 1 条用于判断是否还有更多提交。
+- 文档历史恰好 20 条时不再误报截断；读取时多请求 1 条用于判断是否还有更多提交；含畸形提交行时按原始响应条数判断截断。
 
 ### 变更
 
@@ -40,7 +42,7 @@
 
 ### 验证
 
-- `pytest -q`：912 passed。
+- `pytest -q`：916 passed。
 - `python scripts/gen_assets.py --check`：通过。
 - `bash scripts/lint.sh`：通过。
 - `git diff --check`：通过。

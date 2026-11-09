@@ -8,9 +8,11 @@ import pytest
 
 from rer.errors import ValidationFailure
 from rer.models import (
+    RELATION_TYPES,
     entity_id,
     format_checker_status,
     is_entity_id,
+    load_schema,
     make_entity,
     make_evidence,
     make_locator,
@@ -79,6 +81,11 @@ def test_fixture_capability_state_is_backed_by_entity() -> None:
     capability = load("research.sample.json")["capabilities"][0]
     assert capability["proposal_state"] == "proposed"
     assert issue["normalized_state"]["proposal_state"] == "proposed"
+
+
+def test_relation_type_constant_matches_schema_enum() -> None:
+    schema = load_schema("relation")
+    assert set(RELATION_TYPES) == set(schema["properties"]["type"]["enum"])
 
 
 @pytest.mark.parametrize(

@@ -81,6 +81,7 @@ RELATION_TYPES = (
     "documents",
     "supersedes",
     "reverts",
+    "backports",
     "duplicates",
     "related_candidate",
 )

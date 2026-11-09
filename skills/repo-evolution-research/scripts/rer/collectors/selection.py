@@ -176,6 +176,29 @@ def choose(
             candidate.skipped_reason = "quota_exhausted"
 
 
+def preselect_already_read(
+    candidates: list[Candidate],
+    numbers: Iterable[int],
+) -> int:
+    """Keep previously deep-read PRs visible even when no new quota remains.
+
+    Existing documents are refreshed in the normal collect loop, so they do not
+    consume a new deep-entity slot. Marking them selected keeps selection and
+    coverage derived from the same set of documents.
+    """
+    existing = set(numbers)
+    selected = 0
+    for candidate in candidates:
+        if candidate.number not in existing:
+            continue
+        candidate.selected = True
+        candidate.status = "selected"
+        candidate.skipped_reason = None
+        candidate.reasons = sorted(set(candidate.reasons) | {"already_read"})
+        selected += 1
+    return selected
+
+
 def derive_selection_counts(
     candidates: Iterable[Mapping[str, Any]],
 ) -> dict[str, int]:
@@ -255,5 +278,6 @@ __all__ = [
     "choose",
     "derive_fetched_count",
     "derive_selection_counts",
+    "preselect_already_read",
     "quota_for_budget",
 ]

@@ -409,7 +409,7 @@ def _read_history(
             }
         )
     counts["history_read"] += 1
-    truncated = len(items) > HISTORY_CAP
+    truncated = len(data) > HISTORY_CAP
     items = items[:HISTORY_CAP]
     return _history_section(
         "partial" if truncated else "complete",

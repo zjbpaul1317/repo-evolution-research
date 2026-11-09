@@ -39,7 +39,7 @@ _CLOSING_RE = re.compile(
 _REVERT_RE = re.compile(r"\b(?:this\s+)?reverts?\b", re.IGNORECASE)
 _REVERT_COMMIT_RE = re.compile(r"\s+commit\s+`?", re.IGNORECASE)
 _BACKPORT_RE = re.compile(
-    r"\b(?:backports?|cherry-picks?|cherry-picked\s+from)\b",
+    r"\b(?:backports?|cherry[- ]picks?|cherry[- ]picked\s+from)\b",
     re.IGNORECASE,
 )
 _BACKPORT_COMMIT_RE = re.compile(r"\s+commit\s+`?", re.IGNORECASE)

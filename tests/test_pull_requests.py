@@ -1204,6 +1204,52 @@ def test_quota_limits_selection_and_records_skips(tmp_path: Path) -> None:
     assert all(item["skipped_reason"] == "quota_exhausted" for item in skipped)
 
 
+def test_collect_rerun_keeps_existing_deep_read_in_selection(tmp_path: Path) -> None:
+    store, first_client = make_client(tmp_path, default_handler())
+    seed(store, [10])
+    first = collect_pull_requests(
+        first_client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:00:10Z",
+    )
+    assert first.counts["selected"] == 1
+
+    seed(store, [10, 11])
+    budget = {**BUDGET, "max_deep_entities": 1, "max_deep_prs": 1}
+    second_client = build_client(
+        store,
+        default_handler(),
+        budget=budget,
+        initial_usage=first_client.usage_snapshot(),
+    )
+    second = collect_pull_requests(
+        second_client,
+        store,
+        REPOSITORY,
+        activity_window=WINDOW,
+        clock=lambda: "2026-11-01T08:05:10Z",
+    )
+
+    assert second.selection["quota"]["pr_quota"] == 0
+    assert second.selection["counts"]["selected"] == 1
+    assert second.selection["counts"]["skipped_unchanged"] == 1
+    assert second.selection["counts"]["skipped_quota"] == 1
+    assert second.coverage[0]["coverage_status"] == "complete"
+    assert second.coverage[0]["expected_count"] == 1
+    assert second.coverage[0]["fetched_count"] == 1
+    candidate = next(
+        item for item in second.selection["candidates"] if item["number"] == 10
+    )
+    assert candidate["selected"] is True
+    assert "already_read" in candidate["selection_reason"]
+    skipped = next(
+        item for item in second.selection["candidates"] if item["number"] == 11
+    )
+    assert skipped["status"] == "skipped_quota"
+
+
 def test_nested_pagination_follows_link_headers(tmp_path: Path) -> None:
     base = default_handler(details={10: detail_body(10, changed_files=101)})
 

@@ -460,6 +460,18 @@ def test_cherry_picked_from_commit_becomes_backports_relation() -> None:
     assert relations[0]["to_id"] == entity_id(HOST, OWNER, NAME, "commit", sha)
 
 
+def test_git_default_cherry_pick_trailer_becomes_backports_relation() -> None:
+    sha = "b" * 40
+    relations, _external, _counts = run(
+        f"(cherry picked from commit {sha})",
+        index=NormalizeIndex.build([commit(sha)]),
+    )
+
+    assert len(relations) == 1
+    assert relations[0]["type"] == "backports"
+    assert relations[0]["to_id"] == entity_id(HOST, OWNER, NAME, "commit", sha)
+
+
 def test_backport_records_multiple_adjacent_references() -> None:
     relations, external, _counts = run(
         "Backports #9 and #10.",
