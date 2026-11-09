@@ -211,6 +211,7 @@ def collect_proposals(
         client.deep_entities_used(),
     )
     choose(candidates, quota, issue_quota, discussion_quota)
+    _preselect_already_read(candidates, existing)
     counts = _empty_counts(candidates)
     state = _RunState.empty()
 
@@ -803,6 +804,19 @@ def choose(
             candidate.selected = False
             candidate.skipped_reason = "quota_exhausted"
             candidate.status = "skipped_quota"
+
+
+def _preselect_already_read(
+    candidates: list[ProposalCandidate],
+    existing: Mapping[str, Mapping[int, Mapping[str, Any]]],
+) -> None:
+    for candidate in candidates:
+        if candidate.number not in existing.get(candidate.carrier, {}):
+            continue
+        candidate.selected = True
+        candidate.status = "not_attempted"
+        candidate.skipped_reason = None
+        candidate.reasons = sorted(set(candidate.reasons) | {"already_read"})
 
 
 def _read_candidate(

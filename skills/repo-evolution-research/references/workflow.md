@@ -143,7 +143,7 @@ Agent 读取 `analysis/packs/*.md` 后写 `analysis/selection.json`。该文件�
 - 文档不存在：重新读取。
 - 代码修订键（PR 为 `head_sha + base_sha`）不变、section 完整、全部 `text_ref` 的 blob/hash/bytes 校验通过：只复用 `files` / `commits`。
 - 可变材料（正文、评论、review、合并状态、Release note、Issue/Discussion 内容）在 collector 重建文档时始终重读；selection 的 `already_read` 分支复用已完整快照，不得据此推断可变材料未变。
-- 再次自动 collect 时，已有权威 PR 文档会按 `already_read` 重新选中并重读可变 section；它们不占新的 deep entity 名额。内容未变记 `skipped_unchanged`，因此 `pr-selection` 与 `pr_detail` coverage 不会因预算已用尽而被重置为 `not_requested`。
+- 再次自动 collect 时，已有权威 PR/Issue/Discussion 文档会按 `already_read` 重新选中并重读可变 section；它们不占新的 deep entity 名额。内容未变记 `skipped_unchanged`，因此 `pr-selection` / `proposal-selection` 与对应 detail coverage 不会因预算已用尽而被重置为 `not_requested`。
 - 重建文档与旧文档比较时忽略 `observed_at` 和 `selection_reason`；内容未变记 `skipped_unchanged`，不刷新快照时间。
 - 旧文档 `coverage.detail == complete`、本次重建不是 `complete` 时不得覆盖：保留旧文档，候选记 `failed` / `refresh_incomplete`，coverage 记 `partial`，下次重试；`--force` 同样适用。
 - checkpoint 与文档冲突：以文档为准；checkpoint 只作提示。

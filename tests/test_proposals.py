@@ -187,6 +187,7 @@ def make_client(
     handler,
     *,
     budget: dict[str, int] | None = None,
+    initial_usage: dict[str, Any] | None = None,
 ) -> GitHubClient:
     return GitHubClient(
         store,
@@ -196,6 +197,7 @@ def make_client(
         sleep=lambda _seconds: None,
         now=lambda: NOW,
         max_attempts=1,
+        initial_usage=initial_usage,
     )
 
 
@@ -310,6 +312,42 @@ def test_collects_issue_rfc_and_writes_selection(tmp_path: Path) -> None:
         if item["kind"] == "issue"
     )
     assert entity["raw_state"]["proposal_read"]["detail_path"] == "raw/issues/42.json"
+
+
+def test_proposal_rerun_keeps_existing_deep_read_in_selection(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    write_issue_stream(store, [issue_body(42)])
+    first_client = make_client(store, rest_handler({42: issue_body(42)}))
+    first = collect_proposals(
+        context_for(first_client, store),
+        activity_window=WINDOW,
+    )
+    assert first.counts["selected"] == 1
+
+    write_issue_stream(store, [issue_body(42), issue_body(43)])
+    second_client = make_client(
+        store,
+        rest_handler({42: issue_body(42), 43: issue_body(43)}),
+        budget={**BUDGET, "max_deep_entities": 1},
+        initial_usage=first_client.usage_snapshot(),
+    )
+    second = collect_proposals(
+        context_for(second_client, store),
+        activity_window=WINDOW,
+    )
+
+    channels = {item["channel"]: item for item in second.coverage}
+    assert channels["issue_detail"]["coverage_status"] == "complete"
+    assert channels["issue_detail"]["expected_count"] == 1
+    assert channels["issue_detail"]["fetched_count"] == 1
+    assert second.selection["counts"]["selected"] == 1
+    assert second.selection["counts"]["skipped_unchanged"] == 1
+    assert second.selection["counts"]["skipped_quota"] == 1
+    candidate = next(
+        item for item in second.selection["candidates"] if item["number"] == 42
+    )
+    assert candidate["selected"] is True
+    assert "already_read" in candidate["selection_reason"]
 
 
 def test_issue_comment_pagination_duplicates_are_deduped(tmp_path: Path) -> None:

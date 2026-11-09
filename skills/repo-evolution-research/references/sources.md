@@ -77,6 +77,7 @@
 - 配额为 `min(8, max_deep_entities - deep_entities_used)`，其中 Issue 最多 6、Discussion 最多 2；未用满的槽位按全局分数回填。配额不足记 `quota_limited_selection`。
 - Issue 用 REST 读取 body/comments/timeline；Discussion 用 GraphQL 读取 body/comments/replies/category/upvotes。GraphQL partial data 必须保留已取到的节点并把 comments/detail 标 `partial`，查询失败不得写成空数组成功。
 - Issue/Discussion 没有 head 语义：body、comments、timeline、replies、state 每轮重读，不套用 PR 的 head 跳过规则。旧文档完整、本次重建不完整时保留旧文档并记 `refresh_incomplete`。
+- 再次 collect 时，已有 Issue/Discussion 文档会以 `already_read` 原因保留为已选候选并重读可变 section；不占新的 deep entity 名额，未变化记 `skipped_unchanged`，避免已有提案深读在预算耗尽后丢失 `issue_detail` / `discussion_detail` coverage。
 - 分页漂移产生的重复项必须去重：PR files/commits/comments/reviews 分别按 `filename`/`sha`/`id`，Issue comments/timeline 按 `id`，Discussion comments/replies 按 node `id`。重复计数写入 section 的 `duplicates`，并在 limitations 与 coverage `truncation_reason` 记 `pagination_duplicates`。
 - `state_reason=not_planned` / `duplicate` 记 `closed_not_planned` / `closed_as_duplicate`；`closed` 不自动等于已修复。对象不存在（删除、私有、无权）是持久事实，候选记 `skipped_reason` 并移出 selected，不把通道推成 `unavailable`；访问失败记 `failed`。
 - replies 截断必须区分 `replies_continuation_limit`、`replies_page_limit`、`replies_graphql_errors`、`replies_pagination_incomplete`。

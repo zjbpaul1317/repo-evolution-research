@@ -13,6 +13,7 @@
 ### 修复
 
 - 再次自动 `collect` 时保留已有 PR 深读：已有权威文档以 `already_read` 重新选中并刷新可变 section，不占新的 deep entity 名额；未变化记 `skipped_unchanged`，避免 `pr-selection` 清空、`pr_detail` coverage 被误记为 `not_requested`。
+- 同一恢复逻辑覆盖 Issue/Discussion 深读：已有提案文档保留在 `proposal-selection` 中，避免 `issue_detail` / `discussion_detail` coverage 被误记为 `not_requested`。
 - 文档历史摘要按 `(revision, path)` 精确匹配，并解码 entity ID 中的 percent-encoding；避免多个 revision 同路径时展示旧历史，以及含空格/非 ASCII 路径时摘要丢失。
 - `reverts` / `backports` 支持同一关键词后的多个相邻引用（如 `Reverts #12 and #13`），不再只记录第一个。
 - `backports` 识别 Git 默认的 `(cherry picked from commit <sha>)` 文本，不再只识别带连字符的 `Cherry-picked from`。
@@ -43,7 +44,7 @@
 
 ### 验证
 
-- `pytest -q`：916 passed。
+- `pytest -q`：917 passed。
 - `python scripts/gen_assets.py --check`：通过。
 - `bash scripts/lint.sh`：通过。
 - `git diff --check`：通过。
@@ -52,3 +53,4 @@
 - 该 run 的 manifest `tool_version` 为 0.2.8、schema 1.3；报告由 0.2.9 代码 validate/render，schema 未变化。
 - 分页 ETag 由 `tests/test_github.py` 的 fake transport 覆盖；本轮没有为分页 ETag 重新 collect 真实 run。
 - 两轮真实 collect 冒烟（2026-11-09）：`vllm-project/router` 14 天窗口，run `20261109T023902Z-dbae697a`；首轮 49 次请求、深读 1 个 PR，第二轮 `--force` 后 84 次请求，`deep_entities_used=2`、`pr_quota=0`，已有 PR #410 仍为 `selected`/`already_read`，`pr_detail` coverage 为 `complete`（expected/fetched 1），`audit ok=true`。
+- 完整 e2e（2026-11-09）：`vllm-project/router` 14 天窗口，run `20261109T025145Z-17190672`；49 次请求、1 个 PR、1 个 RFC、1 个 release 和 4 篇文档，research 2 个主题、15 条 claim、2 个 capability、3 个 unknown；validate `ok=true`（0 errors / 9 warnings）；render 14,617 chars，sha256 `a4142bf89160062f6e6ce16ae385b14f6178ea978026f1ee84c83f10d1103545`；audit `ok=true`。
