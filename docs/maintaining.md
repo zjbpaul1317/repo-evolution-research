@@ -45,6 +45,13 @@ python scripts/benchmark_hashing.py --size-mib 32 --repeats 5
 
 32 MiB 案例的 Python 分配峰值降低约 99.2%。流式哈希用于 ledger/research 摘要、报告产物审计、已有 blob 去重核对和 `verify_blob`；需要解析正文或定位引文的路径仍读取实际内容。摘要算法和 ledger 排序契约保持一致，不能把上述局部结果解释为真实采集、prepare 或报告生成的端到端提速。
 
+JSONL 写入可单独运行 `python scripts/benchmark_jsonl.py --records 10000 --repeats 5`。
+它对比旧的整文件编码和当前逐条编码，包含 `write_jsonl` 的去重、原子替换、fsync 与索引重建，
+使用临时合成快照、交替执行并排除首次预热，核对输出 SHA-256。
+输入记录的创建不计入分配峰值；记录对象和去重索引仍随记录数增长。
+2026-11-13 本机 Python 3.13.3 的 10,000 条记录（约 10 MiB）五轮中位数显示，
+Python 分配峰值约降低 49.7%，耗时 0.355 秒与 0.372 秒；这是内存优化，不是端到端提速结论。
+
 ## 版本与发布
 
 首次正式发布前建议完成：

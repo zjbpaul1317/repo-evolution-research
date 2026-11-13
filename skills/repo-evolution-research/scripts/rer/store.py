@@ -363,10 +363,9 @@ class SnapshotStore:
             for record in raw_records:
                 validate_document(record, schema_name)
         materialized = self._dedupe(raw_records, key=key, on_conflict=on_conflict)
-        payload = self._jsonl_bytes(materialized)
         path = self.secure_path(relpath)
         with self.lock():
-            self._atomic_write_bytes(path, payload)
+            self._atomic_write_jsonl(path, materialized)
             self._replace_index(path, key, materialized)
         return path
 
@@ -405,7 +404,7 @@ class SnapshotStore:
                 else:
                     positions[value] = len(merged)
                     merged.append(record)
-            self._atomic_write_bytes(path, self._jsonl_bytes(merged))
+            self._atomic_write_jsonl(path, merged)
             self._replace_index(path, key, merged)
         return path
 
@@ -442,7 +441,7 @@ class SnapshotStore:
                     record if item.get(key) == record[key] else item
                     for item in existing
                 ]
-                self._atomic_write_bytes(path, self._jsonl_bytes(replaced))
+                self._atomic_write_jsonl(path, replaced)
                 self._replace_index(path, key, replaced)
                 return
             with path.open("ab") as handle:
@@ -1083,8 +1082,8 @@ class SnapshotStore:
         self._fsync_dir(path.parent)
         return 1
 
-    def _jsonl_bytes(self, records: Iterable[dict[str, Any]]) -> bytes:
-        return b"".join(self._line(record) for record in records)
+    def _atomic_write_jsonl(self, path: Path, records: Iterable[dict[str, Any]]) -> None:
+        self._atomic_write_chunks(path, (self._line(record) for record in records))
 
     @staticmethod
     def _line(record: dict[str, Any]) -> bytes:
@@ -1099,25 +1098,32 @@ class SnapshotStore:
 
     @staticmethod
     def _atomic_write_bytes(path: Path, payload: bytes) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        SnapshotStore._atomic_write_chunks(path, (payload,))
+
+    @staticmethod
+    def _atomic_write_chunks(path: Path, chunks: Iterable[bytes]) -> None:
+        """Publish only a fully serialized, flushed file; bound encoding memory."""
         temp = path.with_name(f".{path.name}.tmp-{os.getpid()}-{secrets.token_hex(4)}")
         try:
+            path.parent.mkdir(parents=True, exist_ok=True)
             with temp.open("wb") as handle:
                 os.fchmod(handle.fileno(), 0o600)
-                handle.write(payload)
+                for chunk in chunks:
+                    handle.write(chunk)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temp, path)
             SnapshotStore._fsync_dir(path.parent)
         except OSError as exc:
-            try:
-                temp.unlink(missing_ok=True)
-            finally:
-                raise StoreError(
-                    f"原子写入失败：{path}",
-                    source="store.atomic_write",
-                    details={"reason": str(exc)},
-                ) from exc
+            raise StoreError(
+                f"原子写入失败：{path}",
+                source="store.atomic_write",
+                details={"reason": str(exc)},
+            ) from exc
+        finally:
+            # Serialization and cancellation can fail after earlier chunks were
+            # written. Never leave their partial temporary file behind.
+            temp.unlink(missing_ok=True)
 
     @staticmethod
     def _fsync_dir(path: Path) -> None:

@@ -224,6 +224,73 @@ def test_write_jsonl_rejects_conflicting_duplicate(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize("operation", ["write", "upsert"])
+def test_streamed_jsonl_serialization_failure_preserves_original(
+    tmp_path: Path, operation: str,
+) -> None:
+    store, _ = make_store(tmp_path)
+    stream = "raw/atomic.jsonl"
+    original = [{"id": "a", "text": "中文\r\n"}, {"id": "b", "text": "original"}]
+    store.write_jsonl(stream, original)
+    path = store.secure_path(stream)
+    before = path.read_bytes()
+    invalid = {"id": "b", "text": {object()}}
+    with pytest.raises(StoreError, match="序列化"):
+        if operation == "write":
+            store.write_jsonl(stream, [original[0], invalid])
+        else:
+            store.upsert_jsonl(stream, [invalid])
+    assert path.read_bytes() == before
+    assert not list(path.parent.glob(".atomic.jsonl.tmp-*"))
+    store.append_jsonl(stream, original[1])
+    assert store.read_jsonl(stream) == original
+
+
+def test_interrupted_atomic_write_preserves_original(tmp_path: Path) -> None:
+    store, _ = make_store(tmp_path)
+    path = store.write_text("raw/atomic.txt", "original")
+
+    def interrupted():
+        yield b"first chunk"
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        store._atomic_write_chunks(path, interrupted())
+    assert path.read_text() == "original"
+    assert not list(path.parent.glob(".atomic.txt.tmp-*"))
+
+
+def test_streamed_jsonl_preserves_serialization_and_merge_order(tmp_path: Path) -> None:
+    store, _ = make_store(tmp_path)
+    stream = "raw/atomic.jsonl"
+    records = [{"id": str(index), "text": "引文\r\n~" * 100} for index in range(100)]
+    store.write_jsonl(stream, iter(records))
+    replacement = {"id": "50", "text": "updated"}
+    store.append_jsonl(stream, replacement, on_conflict="replace")
+    records[50] = replacement
+    extra = {"id": "extra", "text": "last"}
+    store.upsert_jsonl(stream, iter([replacement, extra]))
+    records.append(extra)
+    expected = "".join(
+        json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in records
+    )
+    assert store.secure_path(stream).read_bytes() == expected.encode("utf-8")
+
+
+def test_atomic_write_failure_cleans_temporary_file(tmp_path: Path, monkeypatch) -> None:
+    store, _ = make_store(tmp_path)
+    path = store.write_text("raw/atomic.txt", "original")
+
+    def fail_replace(*_args):
+        raise OSError("simulated replace failure")
+
+    monkeypatch.setattr("rer.store.os.replace", fail_replace)
+    with pytest.raises(StoreError, match="原子写入失败"):
+        store.write_text("raw/atomic.txt", "replacement")
+    assert path.read_text() == "original"
+    assert not list(path.parent.glob(".atomic.txt.tmp-*"))
+
+
 def test_append_jsonl_reuses_the_stream_index(tmp_path: Path, monkeypatch) -> None:
     store, _ = make_store(tmp_path)
     calls = 0
