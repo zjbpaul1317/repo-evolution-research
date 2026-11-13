@@ -657,9 +657,24 @@ class GitHubClient:
             ) from exc
         data = document.get("data") if isinstance(document, dict) else None
         errors = document.get("errors") if isinstance(document, dict) else None
+        if not isinstance(data, dict) and not (isinstance(errors, list) and errors):
+            raise GitHubError(
+                "GraphQL 响应缺少有效的 data / errors",
+                source="github.graphql",
+            )
+        valid_errors = (
+            [error for error in errors if isinstance(error, dict)]
+            if isinstance(errors, list) else []
+        )
+        if errors is not None and (
+            not isinstance(errors, list) or len(valid_errors) != len(errors)
+        ):
+            valid_errors.append({"message": "GraphQL errors 格式异常"})
+        if data is not None and not isinstance(data, dict):
+            valid_errors.append({"message": "GraphQL data 格式异常"})
         return GraphQLResult(
             data=data if isinstance(data, dict) else {},
-            errors=errors if isinstance(errors, list) else [],
+            errors=valid_errors,
             request_id=response.request_id,
             page=page,
         )
@@ -681,19 +696,33 @@ class GitHubClient:
                 current["cursor"] = cursor
             result = self.graphql(query, variables=current, page=page)
             connection = _get_path(result.data, connection_path)
+            errors = list(result.errors)
             if not isinstance(connection, dict):
-                yield GraphQLPage([], {}, result.errors, result.request_id, page)
+                errors.append({"message": "GraphQL connection 缺失或格式异常"})
+                yield GraphQLPage([], {}, errors, result.request_id, page)
                 return
             nodes = connection.get("nodes")
             page_info = connection.get("pageInfo")
+            valid_nodes = (
+                [node for node in nodes if isinstance(node, dict)]
+                if isinstance(nodes, list) else []
+            )
+            if not isinstance(nodes, list) or len(valid_nodes) != len(nodes):
+                errors.append({"message": "GraphQL nodes 缺失或格式异常"})
+            valid_page_info = (
+                isinstance(page_info, dict)
+                and isinstance(page_info.get("hasNextPage"), bool)
+            )
+            if not valid_page_info:
+                errors.append({"message": "GraphQL pageInfo 缺失或格式异常"})
             yield GraphQLPage(
-                [node for node in nodes or [] if isinstance(node, dict)],
-                page_info if isinstance(page_info, dict) else {},
-                result.errors,
+                valid_nodes,
+                page_info if valid_page_info else {},
+                errors,
                 result.request_id,
                 page,
             )
-            if not isinstance(page_info, dict) or not page_info.get("hasNextPage"):
+            if not valid_page_info or not page_info["hasNextPage"]:
                 return
             cursor = page_info.get("endCursor")
             if not isinstance(cursor, str) or not cursor:

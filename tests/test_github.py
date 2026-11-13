@@ -410,6 +410,65 @@ def test_graphql_200_with_errors_is_partial_not_fatal(tmp_path: Path) -> None:
     assert result.errors[0]["message"] == "partial failure"
 
 
+@pytest.mark.parametrize("body", [None, [], 42, {}, {"data": None}, {"data": []}])
+def test_graphql_rejects_invalid_envelope(tmp_path: Path, body) -> None:
+    client, store, _ = make_client(tmp_path, lambda *_: http_response(200, body))
+    with pytest.raises(GitHubError, match="data / errors"):
+        client.graphql("query {}")
+    assert len(store.read_jsonl("requests.jsonl")) == 1
+
+
+@pytest.mark.parametrize("errors", ["failure", {}, [None, "failure", {"message": "denied"}]])
+def test_graphql_preserves_data_with_malformed_errors(tmp_path: Path, errors) -> None:
+    data = {"repository": {"name": "demo"}}
+    client, _, _ = make_client(
+        tmp_path, lambda *_: http_response(200, {"data": data, "errors": errors}),
+    )
+    result = client.graphql("query {}")
+    assert result.data == data
+    assert result.partial
+    assert all(isinstance(error, dict) for error in result.errors)
+
+
+@pytest.mark.parametrize("connection", [
+    None,
+    {},
+    {"nodes": 1, "pageInfo": {"hasNextPage": False}},
+    {"nodes": {"id": 1}, "pageInfo": {"hasNextPage": False}},
+    {"nodes": [{"id": 1}, None], "pageInfo": {"hasNextPage": False}},
+    {"nodes": [{"id": 1}]},
+    {"nodes": [{"id": 1}], "pageInfo": {"hasNextPage": "false"}},
+])
+def test_graphql_pages_preserve_valid_nodes_and_report_shape_errors(
+    tmp_path: Path, connection,
+) -> None:
+    client, _, _ = make_client(
+        tmp_path, lambda *_: http_response(200, {"data": {"items": connection}}),
+    )
+    pages = list(client.iter_graphql_pages("query {}", connection_path=("items",)))
+    assert len(pages) == 1
+    assert pages[0].errors
+    nodes = connection.get("nodes") if isinstance(connection, dict) else None
+    assert pages[0].nodes == (
+        [node for node in nodes if isinstance(node, dict)] if isinstance(nodes, list) else []
+    )
+
+
+def test_graphql_malformed_nodes_do_not_prevent_following_pages(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        cursor = json.loads(input_text)["variables"].get("cursor")
+        return http_response(200, {"data": {"items": {
+            "nodes": [None, {"id": 1}] if cursor is None else [{"id": 2}],
+            "pageInfo": {"hasNextPage": cursor is None, "endCursor": "next"},
+        }}})
+
+    client, _, _ = make_client(tmp_path, runner)
+    pages = list(client.iter_graphql_pages("query {}", connection_path=("items",)))
+    assert [page.nodes for page in pages] == [[{"id": 1}], [{"id": 2}]]
+    assert pages[0].errors
+    assert not pages[1].errors
+
+
 @pytest.mark.parametrize("transport", ["rest", "graphql"])
 def test_pagination_stops_repeated_targets_before_budget_exhaustion(
     tmp_path: Path, transport: str,

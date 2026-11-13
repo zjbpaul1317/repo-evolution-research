@@ -4,6 +4,7 @@
 
 ### 修复
 
+- GraphQL 通用分页校验 connection、nodes 和 pageInfo，缺失或畸形字段保留可用节点并标记 partial；无有效 data/errors 的响应返回结构化错误，避免 Discussion 发现阶段把协议异常记成完整空结果。畸形 errors 列表保留有效错误并补充诊断。
 - HTTP 响应只从开头解析状态和响应头，避免文档或 diff 正文中的 `HTTP/1.1 404` 等示例被误判为请求失败。支持前置的 informational 响应头；子进程以字节接收后显式 UTF-8 解码，保留正文中的 CRLF。
 - REST / GraphQL 分页发现重复 Link / cursor 时及时停止，按采集错误保留部分结果，避免循环消耗整轮请求预算。
 - Review Thread 外层列表遵循客户端页数上限；重复游标、后续页错误、嵌套评论请求失败与 GraphQL partial data 都保留已取得的线程和 comment ID，并明确标记部分采集。失败的评论后续请求也计入单 PR 的 20 次限额。

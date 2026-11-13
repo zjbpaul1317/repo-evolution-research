@@ -705,6 +705,28 @@ def test_discussion_transport_failure_marks_partial(tmp_path: Path) -> None:
     assert has_blocking_gaps(result.coverage)
 
 
+@pytest.mark.parametrize("connection", [
+    None,
+    {"nodes": [discussion_node(), None], "pageInfo": {"hasNextPage": False}},
+    {"nodes": [discussion_node()], "pageInfo": {}},
+])
+def test_discussion_malformed_connection_keeps_coverage_partial(tmp_path, connection) -> None:
+    fallback = make_runner()
+
+    def runner(argv, input_text):
+        if argv[1:3] == ["api", "graphql"]:
+            return http_response(200, {"data": {"repository": {"discussions": connection}}})
+        return fallback(argv, input_text)
+
+    store, result = run_activity(tmp_path, runner)
+    coverage = {entry["channel"]: entry for entry in result.coverage}
+    assert coverage["activity_discussions"]["coverage_status"] == "partial"
+    assert has_blocking_gaps(result.coverage)
+    if connection is not None:
+        entities = store.read_jsonl("normalized/entities.jsonl")
+        assert any(entity["kind"] == "discussion" for entity in entities)
+
+
 def test_activity_raw_stream_preserves_deep_fields(tmp_path: Path) -> None:
     item = pr_item(10, merged_at="2026-09-20T10:00:00Z")
 
