@@ -676,27 +676,39 @@ def _fit_budget(
             discovery_cap=discovery_cap,
             manifest=manifest,
             candidates=candidates,
+            research_handoff=research_handoff,
         )
         total = sum(len(text) for text in texts.values())
         if total <= max_chars:
             return groups, omitted, discovery_cap, research_cap
     research_cap = RESEARCH_CAPS[-1]
     discovery_cap = 160
-    texts = _render_groups(
-        groups,
-        research_cap=research_cap,
-        discovery_cap=discovery_cap,
-        manifest=manifest,
-        candidates=candidates,
-    )
-    total = sum(len(text) for text in texts.values())
-    for group, item in _drop_order(groups, research_handoff=research_handoff):
-        if total <= max_chars:
-            break
-        if item not in group["items"]:
-            continue
-        key = (str(group["source_kind"]), str(group["module"]))
-        group["items"].remove(item)
+    order = _drop_order(groups, research_handoff=research_handoff)
+    # Dropping a longer prefix only removes item text and empty section/pack
+    # headings. Find the shortest fitting prefix without rendering the whole
+    # remaining pack after every single removal (quadratic for large groups).
+    low, high = 1, len(order)
+    while low < high:
+        middle = (low + high) // 2
+        removed = {id(item) for _, item in order[:middle]}
+        remaining = [
+            {**group, "items": [item for item in group["items"] if id(item) not in removed]}
+            for group in groups
+        ]
+        texts = _render_groups(
+            remaining,
+            research_cap=research_cap,
+            discovery_cap=discovery_cap,
+            manifest=manifest,
+            candidates=candidates,
+            research_handoff=research_handoff,
+        )
+        if sum(len(text) for text in texts.values()) <= max_chars:
+            high = middle
+        else:
+            low = middle + 1
+    removed = {id(item) for _, item in order[:low]}
+    for group, item in order[:low]:
         group["omitted_candidate_ids"].add(str(item["candidate_id"]))
         omitted.append(
             {
@@ -709,22 +721,8 @@ def _fit_budget(
                 ),
             }
         )
-        previous = len(texts.get(key, ""))
-        if group["items"]:
-            texts[key] = _render_pack(
-                pack_id(*key),
-                key[0],
-                key[1],
-                sorted(group["items"], key=lambda value: _item_order(value, research_handoff)),
-                manifest=manifest,
-                candidates=candidates,
-                research_cap=research_cap,
-                discovery_cap=discovery_cap,
-            )
-            total += len(texts[key]) - previous
-        else:
-            texts.pop(key, None)
-            total -= previous
+    for group in groups:
+        group["items"] = [item for item in group["items"] if id(item) not in removed]
     return groups, omitted, discovery_cap, research_cap
 
 
@@ -823,13 +821,14 @@ def _render_groups(
     discovery_cap: int,
     manifest: Mapping[str, Any] | None,
     candidates: Mapping[str, Any] | None,
+    research_handoff: bool = False,
 ) -> dict[tuple[str, str], str]:
     texts: dict[tuple[str, str], str] = {}
     for group in groups:
         if not group["items"]:
             continue
         key = (str(group["source_kind"]), str(group["module"]))
-        items = sorted(group["items"], key=_item_order)
+        items = sorted(group["items"], key=lambda value: _item_order(value, research_handoff))
         texts[key] = _render_pack(
             pack_id(*key),
             key[0],

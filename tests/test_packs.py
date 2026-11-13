@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
 import test_normalize as normalize_helpers
 import test_ranking as ranking_helpers
 
@@ -17,6 +18,68 @@ from rer.models import (
     make_locator,
     validate_document,
 )
+
+
+@pytest.mark.parametrize("research_handoff", [False, True])
+@pytest.mark.parametrize("budget", [0, 1, 1200, 4000, 12000, 30000, 100000])
+def test_budget_fitting_matches_exhaustive_priority_prefix(budget, research_handoff) -> None:
+    candidates = {"candidates": [
+        {
+            "candidate_id": f"candidate-{index:02d}",
+            "entity_id": f"github.com/acme/demo/pull/{index + 1}",
+            "kind": "pull_request",
+            "module": f"module-{index % 3}",
+            "title": "Title 中文 " * 4,
+            "score": index % 7,
+            "tier": "research" if index % 2 else "discovery",
+            "agent_selected": index % 5 == 0,
+            "deep_read": index % 2 == 1,
+            "recommended": index % 3 == 0,
+            "exploration_reserved": index % 11 == 0,
+            "preview_text": "preview\n~~~\n" * 100,
+            "evidence_previews": [{"text": "引用\n~~~~\n" * 200, "original_chars": 1600}],
+        }
+        for index in range(30)
+    ]}
+    original = packs._groups(candidates)
+    actual, omitted, discovery_cap, research_cap = packs._fit_budget(
+        copy.deepcopy(original), max_chars=budget, manifest=None,
+        candidates=None, research_handoff=research_handoff,
+    )
+    order = packs._drop_order(original, research_handoff=research_handoff)
+    # Exhaustively try every prefix as a small, independent oracle. Production
+    # uses a logarithmic search, but must retain precisely this maximal suffix.
+    for count in range(len(order) + 1):
+        removed = {item["candidate_id"] for _, item in order[:count]}
+        remaining = [
+            {**group, "items": [
+                item for item in group["items"] if item["candidate_id"] not in removed
+            ]}
+            for group in original
+        ]
+        texts = packs._render_groups(
+            remaining, research_cap=research_cap, discovery_cap=discovery_cap,
+            manifest=None, candidates=None, research_handoff=research_handoff,
+        )
+        if sum(map(len, texts.values())) <= budget:
+            break
+    assert [item["candidate_id"] for item in omitted] == [
+        item["candidate_id"] for _, item in order[:count]
+    ]
+    assert [group["items"] for group in actual] == [group["items"] for group in remaining]
+    assert all(
+        group["omitted_candidate_ids"] == {
+            item["candidate_id"] for source, item in order[:count]
+            if source["module"] == group["module"]
+        }
+        for group in actual
+    )
+    for item in omitted:
+        selected = next(
+            value["agent_selected"] for _, value in order
+            if value["candidate_id"] == item["candidate_id"]
+        )
+        assert item["reason"] == ("selected_hard_budget" if selected else "pack_char_budget")
 
 
 def candidates_for(tmp_path: Path, **budget) -> tuple:

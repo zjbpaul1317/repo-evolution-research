@@ -52,6 +52,19 @@ JSONL 写入可单独运行 `python scripts/benchmark_jsonl.py --records 10000 -
 2026-11-13 本机 Python 3.13.3 的 10,000 条记录（约 10 MiB）五轮中位数显示，
 Python 分配峰值约降低 49.7%，耗时 0.355 秒与 0.372 秒；这是内存优化，不是端到端提速结论。
 
+阅读包预算裁剪可与保存的旧源码比较（baseline 会作为 Python 模块导入，使用可信仓库源码）：
+
+```bash
+git show 1cf3cf1:skills/repo-evolution-research/scripts/rer/packs.py > /tmp/rer-packs-before.py
+python scripts/benchmark_packs.py --baseline-file /tmp/rer-packs-before.py --repeats 5
+```
+
+默认单组 1,000 个合成候选、8,000 字符预算，排除输入构造和首次预热，交替运行两种实现。
+脚本逐轮比较完整裁剪结果，结果不一致立即失败；中位数仅代表裁剪步骤。
+2026-11-13 本机 Python 3.13.3 五轮结果：原实现 4.427 秒，二分裁剪 0.0397 秒，
+均淘汰 987 个候选，输出一致。此案例刻意覆盖大量候选集中在同一组且预算紧张的场景；
+不能把约 112 倍局部加速推广到完整 prepare 或真实采集。
+
 ## 版本与发布
 
 首次正式发布前建议完成：
