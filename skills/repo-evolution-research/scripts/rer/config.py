@@ -131,6 +131,8 @@ def parse_repository(value: str) -> RepoRef:
         raise UsageError("仓库地址不能为空", source="config.repository")
 
     raw = value.strip()
+    if any(ord(character) < 32 or ord(character) == 127 for character in raw):
+        raise UsageError("仓库地址包含控制字符", source="config.repository")
     host: str
     path: str
 
@@ -144,16 +146,26 @@ def parse_repository(value: str) -> RepoRef:
             )
         host, path = match.group(1), match.group(2)
     elif "://" in raw:
-        parsed = urlsplit(raw)
+        try:
+            parsed = urlsplit(raw)
+            # Accessing port validates its syntax and range; urlsplit alone
+            # accepts non-numeric or out-of-range values.
+            _ = parsed.port
+        except ValueError as exc:
+            raise UsageError(
+                "仓库 URL 格式无效",
+                source="config.repository",
+                recovery="使用 https://github.com/<owner>/<repo>",
+            ) from exc
         if parsed.scheme not in ("http", "https", "ssh", "git"):
             raise UsageError(
                 f"不支持的仓库协议：{parsed.scheme}",
                 source="config.repository",
                 recovery="使用 https://github.com/<owner>/<repo>",
             )
-        has_credentials = bool(parsed.password)
+        has_credentials = parsed.password is not None
         if parsed.scheme in ("http", "https"):
-            has_credentials = has_credentials or bool(parsed.username)
+            has_credentials = has_credentials or parsed.username is not None
         elif parsed.scheme in ("ssh", "git"):
             has_credentials = has_credentials or parsed.username not in (None, "git")
         if has_credentials:

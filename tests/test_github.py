@@ -27,6 +27,7 @@ from rer.github import (
     probe_repository,
     sanitize_url,
     validate_headers,
+    validate_next_url,
 )
 from rer.store import create_run, new_run_id
 
@@ -42,6 +43,22 @@ BUDGET = {
     "max_runtime_minutes": 35,
     "max_pack_chars": 100000,
 }
+
+
+@pytest.mark.parametrize("url", [
+    "https://user:private-secret@[broken/path",
+    "https://api.github.com:bad/repos/o/r",
+    "https://api.git\thub.com/repos/o/r",
+    "https://api.github.com/repos/o/r?page=2\n",
+])
+def test_invalid_pagination_url_is_a_structured_error(url: str) -> None:
+    with pytest.raises(GitHubError) as error:
+        validate_next_url(url)
+    assert "private-secret" not in json.dumps(error.value.to_dict())
+
+
+def test_sanitize_malformed_url_does_not_echo_credentials() -> None:
+    assert sanitize_url("https://user:private-secret@[broken/path") == "<invalid-url>"
 
 
 def http_response(

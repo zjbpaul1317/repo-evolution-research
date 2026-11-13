@@ -80,6 +80,14 @@ def test_repository_identity_is_lowercase_and_hash_stable() -> None:
         "https://github.com/a/b?token=secret",
         "https://github.com/a/b#readme",
         "o\n/r",
+        "https://[broken/a/b",
+        "https://github.com:invalid/a/b",
+        "https://github.com:99999/a/b",
+        "https://github.com/ow\nner/repo",
+        "https://git\thub.com/a/b",
+        "https://github.com/a/b\x00",
+        "https://@github.com/a/b",
+        "ssh://git:@github.com/a/b",
     ],
 )
 def test_parse_repository_rejects_invalid(value: str) -> None:

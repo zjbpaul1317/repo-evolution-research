@@ -48,6 +48,18 @@ def test_invalid_repository_does_not_create_output(tmp_path: Path) -> None:
     assert not (tmp_path / ".repo-research").exists()
 
 
+@pytest.mark.parametrize("repository", [
+    "https://[broken/a/b",
+    "https://github.com:invalid/a/b",
+    "https://git\thub.com/a/b",
+])
+def test_malformed_repository_returns_usage_error(tmp_path: Path, repository: str) -> None:
+    result = run_cli(tmp_path, "init", "--repo", repository)
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["error"]["code"] == "usage_error"
+    assert not (tmp_path / ".repo-research").exists()
+
+
 def test_conflicting_window_arguments_do_not_create_output(tmp_path: Path) -> None:
     result = run_cli(tmp_path, "init", "--repo", "example/demo", "--days", "30", "--months", "1")
     assert result.returncode == 2

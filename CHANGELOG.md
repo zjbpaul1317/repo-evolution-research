@@ -4,6 +4,7 @@
 
 ### 修复
 
+- 仓库 URL 的畸形 authority / 端口返回 usage_error（exit 2），拒绝内部控制字符与空 userinfo，避免 URL 解析器静默移除制表符后误接收地址。畸形分页 URL 返回结构化 GitHubError；错误诊断不回显无法安全解析的凭据。
 - GraphQL 通用分页校验 connection、nodes 和 pageInfo，缺失或畸形字段保留可用节点并标记 partial；无有效 data/errors 的响应返回结构化错误，避免 Discussion 发现阶段把协议异常记成完整空结果。畸形 errors 列表保留有效错误并补充诊断。
 - HTTP 响应只从开头解析状态和响应头，避免文档或 diff 正文中的 `HTTP/1.1 404` 等示例被误判为请求失败。支持前置的 informational 响应头；子进程以字节接收后显式 UTF-8 解码，保留正文中的 CRLF。
 - REST / GraphQL 分页发现重复 Link / cursor 时及时停止，按采集错误保留部分结果，避免循环消耗整轮请求预算。

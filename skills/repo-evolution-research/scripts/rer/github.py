@@ -141,7 +141,12 @@ def sanitize_params(params: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 def sanitize_url(url: str) -> str:
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        # A malformed authority can contain credentials; do not echo the raw
+        # value while trying to report the original protocol error.
+        return "<invalid-url>"
     host = parts.hostname or ""
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
@@ -193,17 +198,18 @@ def validate_headers(headers: Mapping[str, str] | None) -> Mapping[str, str]:
 
 
 def validate_next_url(url: str) -> None:
-    parts = urlsplit(url)
     try:
+        parts = urlsplit(url)
         port = parts.port
     except ValueError as exc:
         raise GitHubError(
-            "Link 分页目标端口非法",
+            "Link 分页目标 URL 非法",
             source="github.link",
             details={"url": sanitize_url(url)},
         ) from exc
     if (
-        parts.scheme != "https"
+        any(ord(character) < 32 or ord(character) == 127 for character in url)
+        or parts.scheme != "https"
         or parts.hostname != "api.github.com"
         or parts.username is not None
         or parts.password is not None
