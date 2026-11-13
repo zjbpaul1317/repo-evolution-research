@@ -22,7 +22,7 @@ from .collectors.progress import CHANNEL_POLICIES
 from .errors import RERError, SchemaError, UsageError
 from .lifecycle import check_state_assertions, verify_capability
 from .models import normalize_newlines, validate_document
-from .store import SnapshotStore
+from .store import SnapshotStore, file_sha256
 
 RESEARCH_PATH = "analysis/research.json"
 VALIDATION_PATH = "analysis/validation.json"
@@ -80,7 +80,7 @@ def research_digest(store: SnapshotStore) -> str | None:
     path = store.secure_path(RESEARCH_PATH)
     if not path.is_file():
         return None
-    return sha256_hex(path.read_bytes())
+    return file_sha256(path)
 
 
 def ledger_digest(store: SnapshotStore, manifest: Mapping[str, Any]) -> str:
@@ -90,14 +90,14 @@ def ledger_digest(store: SnapshotStore, manifest: Mapping[str, Any]) -> str:
     for relpath in _LEDGER_FILES:
         path = store.secure_path(relpath)
         if path.is_file():
-            entries.append((relpath, sha256_hex(path.read_bytes())))
+            entries.append((relpath, file_sha256(path)))
     for directory in _LEDGER_DIRS:
         root = store.secure_path(directory)
         if not root.is_dir():
             continue
         for path in sorted(item for item in root.rglob("*") if item.is_file()):
             relpath = path.relative_to(store.run_dir).as_posix()
-            entries.append((relpath, sha256_hex(path.read_bytes())))
+            entries.append((relpath, file_sha256(store.secure_path(relpath))))
     entries.sort()
     for relpath, value in entries:
         digest.update(f"{relpath}\0{value}\n".encode())
@@ -319,14 +319,28 @@ def _load_ledger(
     store: SnapshotStore,
     errors: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    try:
-        entities = store.read_jsonl("normalized/entities.jsonl")
-        evidence = store.read_jsonl("normalized/evidence.jsonl")
-        relations = store.read_jsonl("normalized/relations.jsonl")
-    except RERError as exc:
-        errors.append(_problem("ledger_unreadable", exc.message, path="normalized/"))
-        return [], [], []
-    return entities, evidence, relations
+    streams = []
+    for name, schema_name in (
+        ("entities", "entity"),
+        ("evidence", "evidence"),
+        ("relations", "relation"),
+    ):
+        relpath = f"normalized/{name}.jsonl"
+        valid_records = []
+        streams.append(valid_records)
+        try:
+            records = store.read_jsonl(relpath)
+        except RERError as exc:
+            errors.append(_problem("ledger_unreadable", exc.message, path=relpath))
+            continue
+        for index, record in enumerate(records):
+            try:
+                validate_document(record, schema_name)
+            except SchemaError as exc:
+                errors.append(_problem("ledger_schema", exc.message, path=f"{relpath}:{index + 1}"))
+            else:
+                valid_records.append(record)
+    return streams[0], streams[1], streams[2]
 
 
 def _integrity_problems(store: SnapshotStore) -> list[dict[str, Any]]:

@@ -177,6 +177,8 @@ PYTHON=python bash scripts/lint.sh
 
 The CI workflow runs these offline checks on Linux and macOS with Python 3.11 and 3.13, without repository secrets or live GitHub API calls. A configured matrix is separate from an observed successful CI run.
 
+For a reproducible local comparison of SHA-256 memory use, run `python scripts/benchmark_hashing.py --size-mib 32 --repeats 5`. See the [benchmark method and scope](docs/maintaining.md#本地性能对比). These measurements cover file hashing, not end-to-end collection or report generation.
+
 See [contributing](CONTRIBUTING.md), [collector contracts](docs/collector-authoring.md), [security](SECURITY.md), and the [maintainer guide](docs/maintaining.md). Some detailed references and diagnostic messages currently use Chinese.
 
 ## License

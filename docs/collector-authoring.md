@@ -71,13 +71,19 @@ def collect_issue_comments(
 |---|---|
 | `name` | section 名；同时作为错误 source 前缀（`<name>.response`） |
 | `endpoint` | REST 端点模板，支持 `{owner}` / `{name}` / `{number}`；调用参数 `name` 指仓库名 |
-| `parse_item` | 把单个原始 item 映射为文档片段；非 `Mapping` 项会被跳过 |
+| `parse_item` | 把单个原始 item 映射为文档片段；非 `Mapping` 项会被跳过并记录缺口 |
 | `cap` | 最多保留多少条；`None` 表示不设上限 |
 | `cap_reason` | 达到 cap 时的 `truncation_reason` |
 | `total_known_key` | 从父详情对象读取 `total_known` 的字段名 |
 | `mismatch_reason` | 父详情总数与抓取数不一致时的 `truncation_reason` |
 
 `fetch_section()` 负责分页、cap、`total_known`、`build_section()` 和页数统计，返回 `(section, pages)`。分页计数只来自 `FetchResult.pages`；请求预算仍由 `client.usage` 前后差值统计。可变单对象 REST GET 可用 `client.rest_cached()` 做 ETag 重验证；分页列表统一走 `iter_rest_pages`，它会逐页做 ETag 重验证并复用缓存的 Link header，collector 不要自行缓存整页。
+
+含非对象条目的 REST section 保留可用对象，并用 `<name>_items_invalid` 标记 `partial`；全部条目不可用时为 `unavailable`。已有失败或停止原因会与该诊断并存，避免达到时间窗口后把较早的畸形响应恢复为 `complete`。未指定自定义原因时，条数上限与数量不匹配分别使用 `item_cap`、`total_mismatch`。
+
+通用 REST / GraphQL 分页遇到重复 Link / cursor 会抛出 `GitHubError`，由 collector 保留部分页；正常页数上限仍按原有预算规则处理。自行调用 `client.graphql()` 的 adapter 必须另行限制外层与嵌套分页，拒绝重复游标，并把失败的后续请求也计入通道限额。GraphQL 同时返回 data/errors 时先保存可用节点，再标记缺口；`hasNextPage=false` 也不能覆盖已知的数量不匹配或畸形节点。
+
+Review Thread 的初始评论和后续评论页发现畸形节点时，后续取得足够数量的 ID 也不能抹掉该缺口。Discussion comments/replies 的后续非致命请求失败保留已取正文和评论并标记 `comments_unavailable` / `replies_unavailable:<id>`；认证、全局预算等致命异常继续交给上层处理，不能降级为空结果。
 
 PR collector 的 5 个 section 已改为声明式实现，见 `collectors/pull_requests.py` 的 `_section_specs()`。Release 列表也通过 `SectionSpec` + `fetch_section_result()` 抓取；Issue comments/timeline 使用 `SectionSpec` + `fetch_section()`。Discussion、文档快照和外部 envelope 不套用 `fetch_section()`，只复用 `CollectContext`、`text_ref`、状态/coverage 契约和 section 级分层。
 

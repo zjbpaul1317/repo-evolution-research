@@ -29,6 +29,15 @@ from rer.selection_protocol import (
 NOW = "2026-11-01T08:00:00Z"
 
 
+def test_selection_invalid_utf8_is_a_validation_failure(tmp_path: Path) -> None:
+    store, _ = pr_helpers.make_client(tmp_path, pr_helpers.default_handler())
+    path = tmp_path / "selection.json"
+    path.write_bytes(b"\xff")
+    with pytest.raises(ValidationFailure) as error:
+        load_agent_selection(store, {"run_id": store.run_dir.name}, path=path)
+    assert error.value.source == "selection.load"
+
+
 def read_flags(
     *,
     body: bool = True,

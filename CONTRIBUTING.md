@@ -36,6 +36,8 @@ git diff --check
 
 默认测试使用 fake transport 和本地 fixture，不需要 GitHub 认证、模型 API 密钥或已有研究快照。采集真实仓库不是每个 PR 的必需步骤；需要网络验证时记录提交、环境、窗口、覆盖和局限，不把历史 run 的结果写成当前版本已验证。
 
+`lint.sh` 同时检查 Skill、维护脚本、测试和 `evals/*.py`；忽略 `evals/results/` 的本地生成材料。涉及大文件哈希的改动可用 `python scripts/benchmark_hashing.py --size-mib 32 --repeats 5` 对比局部内存和耗时，测量含义见 [维护指南](docs/maintaining.md#本地性能对比)。
+
 配置注册表变化后运行 `python scripts/gen_assets.py --write` 并审阅生成差异。不要直接修改由该脚本生成的配置、schema 片段或配置文档。仅当行为变化合理时更新 golden fixture，并检查报告语义。
 
 ## 改动约定

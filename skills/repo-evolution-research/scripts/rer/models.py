@@ -190,7 +190,10 @@ def _check_uri_format(value: str) -> None:
         return True
     if any(character.isspace() for character in value):
         raise FormatError(f"{value!r} is not a valid URI")
-    parts = urlsplit(value)
+    try:
+        parts = urlsplit(value)
+    except ValueError as exc:
+        raise FormatError(f"{value!r} is not a valid URI") from exc
     if not parts.scheme or not _URI_SCHEME_RE.fullmatch(parts.scheme):
         raise FormatError(f"{value!r} is not a valid URI")
     if parts.scheme.lower() in ("http", "https") and not parts.netloc:
@@ -713,8 +716,12 @@ def resolve_json_pointer(document: Any, pointer: str) -> Any:
         raise ValueError("JSON pointer must start with '/'")
     current = document
     for raw in pointer.split("/")[1:]:
+        if re.search(r"~(?:[^01]|$)", raw):
+            raise ValueError("JSON pointer contains an invalid escape")
         token = raw.replace("~1", "/").replace("~0", "~")
         if isinstance(current, list):
+            if not re.fullmatch(r"0|[1-9][0-9]*", token):
+                raise ValueError("JSON pointer array index must be a non-negative integer")
             current = current[int(token)]
         elif isinstance(current, dict):
             current = current[token]

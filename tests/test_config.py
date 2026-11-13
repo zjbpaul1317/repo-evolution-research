@@ -23,6 +23,15 @@ NOW = datetime(2026, 11, 1, 8, 0, 0, tzinfo=UTC)
 FIXTURES = Path(__file__).parent / "fixtures" / "example"
 
 
+@pytest.mark.parametrize("artifact", [False, True])
+def test_config_invalid_utf8_keeps_the_input_error_category(tmp_path, artifact) -> None:
+    path = tmp_path / "config.json"
+    path.write_bytes(b"\xff")
+    with pytest.raises(ArtifactError if artifact else UsageError) as error:
+        read_resolved_config(path, artifact=artifact)
+    assert error.value.source == ("config.artifact" if artifact else "config.read")
+
+
 @pytest.mark.parametrize(
     ("value", "owner", "name"),
     [

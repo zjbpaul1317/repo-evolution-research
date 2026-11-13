@@ -14,6 +14,7 @@ from .collectors.docs import load_doc_snapshots
 from .collectors.pr_store import load_pr_documents
 from .collectors.proposal_store import load_discussion_documents, load_issue_documents
 from .diversity import diverse_order
+from .errors import RERError
 from .models import validate_document
 from .validation import substantive_text
 
@@ -336,8 +337,10 @@ def audit_pack_index(
             )
         relpath = str(pack.get("path"))
         expected_paths.add(relpath)
-        pack_path = store.secure_path(relpath)
-        if not pack_path.is_file():
+        try:
+            pack_path = store.secure_path(relpath)
+            chars = len(pack_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
             problems.append(
                 {
                     "artifact": PACK_INDEX_PATH,
@@ -347,8 +350,17 @@ def audit_pack_index(
                     "message": "pack-index 引用的 Markdown 文件不存在",
                 }
             )
+        except (OSError, UnicodeError, RERError) as exc:
+            problems.append(
+                {
+                    "artifact": PACK_INDEX_PATH,
+                    "pack_id": identifier,
+                    "path": relpath,
+                    "problem": "unreadable_pack_file",
+                    "message": str(getattr(exc, "message", exc)),
+                }
+            )
         else:
-            chars = len(pack_path.read_text(encoding="utf-8"))
             if chars != pack.get("chars"):
                 problems.append(
                     {

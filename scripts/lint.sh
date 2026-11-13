@@ -14,10 +14,10 @@ else
   RUFF_MISSING=1
 fi
 
-"$PYTHON" -m compileall -q skills/repo-evolution-research/scripts tests
+"$PYTHON" -m compileall -q skills/repo-evolution-research/scripts scripts tests evals/*.py
 
 if [ "$RUFF_MISSING" -eq 0 ]; then
-  "${RUFF_CMD[@]}" check skills/repo-evolution-research/scripts scripts tests
+  "${RUFF_CMD[@]}" check skills/repo-evolution-research/scripts scripts tests evals/*.py
 fi
 
 "$PYTHON" - <<'PY'
@@ -28,6 +28,7 @@ from pathlib import Path
 files = list(Path("skills/repo-evolution-research/scripts").rglob("*.py"))
 files += list(Path("scripts").glob("*.py"))
 files += list(Path("tests").rglob("*.py"))
+files += list(Path("evals").glob("*.py"))
 problems = []
 
 for path in files:

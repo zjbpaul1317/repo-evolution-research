@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ..errors import GitHubError, GitHubNotFoundError
@@ -93,7 +93,7 @@ def fetch_rest_list(
                 items = items[:cap]
                 has_next = bool(parse_link_header(page.headers.get("link")).get("next"))
                 if overflow or has_next:
-                    reason = cap_reason
+                    reason = cap_reason or "item_cap"
                 break
             if (
                 stop_after is not None
@@ -130,7 +130,7 @@ def build_section(
         if cap is not None and len(items) >= cap and cap_reason:
             reason = cap_reason
         else:
-            reason = reason or mismatch_reason
+            reason = reason or mismatch_reason or "total_mismatch"
     elif reason and result.status == "partial":
         truncated = True
     elif reason == "not_found":
@@ -206,6 +206,12 @@ def fetch_section_result(
         for item in result.items
         if isinstance(item, Mapping)
     ]
+    if len(items) != len(result.items):
+        result = replace(
+            result,
+            status="partial" if items else "unavailable",
+            reason="; ".join(filter(None, (result.reason, f"{spec.name}_items_invalid"))),
+        )
     total_known = (
         as_optional_int(parent.get(spec.total_known_key))
         if parent is not None and spec.total_known_key is not None

@@ -1026,6 +1026,14 @@ def test_import_rollback_failure_reports_partial_state(
     assert excinfo.value.details["rollback_problems"]
 
 
+def test_load_envelope_rejects_invalid_utf8_as_input_error(tmp_path: Path) -> None:
+    path = tmp_path / "envelope.json"
+    path.write_bytes(b"\xff")
+    with pytest.raises(UsageError) as error:
+        load_envelope(path)
+    assert error.value.source == "import_source.read"
+
+
 def test_load_envelope_rejects_invalid_document(tmp_path: Path) -> None:
     path = tmp_path / "envelope.json"
     path.write_text('{"schema_version": "1.3"}', encoding="utf-8")

@@ -489,6 +489,29 @@ def test_release_pagination_stops_after_window(tmp_path: Path) -> None:
     assert "release_window_reached" in result.coverage[0]["truncation_reason"]
 
 
+def test_release_window_stop_does_not_hide_invalid_items_from_earlier_pages(tmp_path) -> None:
+    def handler(endpoint: str, input_text: str) -> CommandResult:
+        if endpoint == "repos/acme/demo/releases":
+            return http_response(200, [None, release_body()], {
+                "Link": '<https://api.github.com/repos/acme/demo/releases?page=2>; rel="next"',
+            })
+        if endpoint.endswith("releases?page=2"):
+            return http_response(200, [release_body(2, published_at="2026-07-01T00:00:00Z")])
+        if endpoint.startswith("repos/acme/demo/git/ref/tags/"):
+            return http_response(200, tag_ref_body())
+        return http_response(404, {"message": "unhandled"})
+
+    store, client = make_client(tmp_path, handler)
+    result = collect_releases(
+        context_for(client, store, lambda: "2026-11-01T08:00:10Z"), activity_window=WINDOW,
+    )
+    coverage = result.coverage[0]
+    assert coverage["coverage_status"] == "partial"
+    assert "release_window_reached" in coverage["truncation_reason"]
+    assert "releases_items_invalid" in coverage["truncation_reason"]
+    assert result.counts["written"] == 1
+
+
 def test_budget_exhaustion_degrades_to_partial(tmp_path: Path) -> None:
     tight = {**BUDGET, "max_requests": 1}
     store = create_run(tmp_path, REPOSITORY, new_run_id(NOW))

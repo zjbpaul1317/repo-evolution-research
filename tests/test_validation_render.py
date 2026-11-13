@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -275,6 +276,53 @@ def test_validate_refuses_empty_evidence_even_for_unknown_only_research(tmp_path
     assert cli.main(["validate", "--run", str(store.run_dir)]) == 5
     result = store.read_json("analysis/validation.json")
     assert any(item["code"] == "no_research_evidence" for item in result["errors"])
+
+
+def test_streaming_ledger_digest_preserves_the_existing_byte_contract(tmp_path) -> None:
+    store = create_run(tmp_path, {"host": "github.com", "owner": "acme", "name": "demo"}, RUN_ID)
+    payloads = {
+        "normalized/entities.jsonl": b'{"id":"example"}\n',
+        "raw/pr-details/1.json": b'{"text":"first\\r\\nsecond"}\r\n',
+        "imported/source/data.json": b"\x00\xff\r\n" * 100000,
+    }
+    for relpath, payload in payloads.items():
+        store.write_bytes(relpath, payload)
+    manifest = {"coverage": [], "default_branch_sha": REVISION}
+    material = "".join(
+        f"{relpath}\0{hashlib.sha256(payload).hexdigest()}\n"
+        for relpath, payload in sorted(payloads.items())
+    )
+    material += f"coverage\0[]\ndefault_branch_sha\0{REVISION}\n"
+    original = validation.ledger_digest(store, manifest)
+    assert original == hashlib.sha256(material.encode()).hexdigest()
+    store.write_bytes("raw/pr-details/1.json", payloads["raw/pr-details/1.json"].replace(
+        b"first", b"other",
+    ))
+    assert validation.ledger_digest(store, manifest) != original
+
+
+@pytest.mark.parametrize(
+    ("stream", "field", "value"),
+    [("entities", "id", []), ("evidence", "blob_sha256", None)],
+)
+def test_validate_records_schema_failures_without_crashing(
+    tmp_path, capsys, stream, field, value,
+) -> None:
+    store = seed_run(tmp_path)
+    records = store.read_jsonl(f"normalized/{stream}.jsonl")
+    records[0][field] = value
+    store.write_bytes(
+        f"normalized/{stream}.jsonl",
+        "".join(json.dumps(item) + "\n" for item in records).encode(),
+    )
+
+    assert cli.main(["validate", "--run", str(store.run_dir)]) == 5
+    result = json.loads(capsys.readouterr().out)
+    assert result["error"]["code"] == "validation_failed"
+    document = store.read_json("analysis/validation.json")
+    assert document["ok"] is False
+    assert any(item["code"] == "ledger_schema" for item in document["errors"])
+    assert any(item["code"] == "integrity:schema_error" for item in document["errors"])
     assert not store.secure_path("report.md").exists()
 
 

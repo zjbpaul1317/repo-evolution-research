@@ -29,6 +29,7 @@ SHA256_RE = re.compile(r"\A[0-9a-f]{64}\Z")
 STAGE_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _HOST_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9.-]*\Z")
 _REPO_SEGMENT_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]*\Z")
+_StreamFingerprint = tuple[int, int, int, int, int]
 _RUN_SUBDIRS = (
     "blobs",
     "raw",
@@ -100,6 +101,12 @@ def create_run(output_root: Path, repository: dict[str, Any], run_id: str) -> Sn
     return SnapshotStore(run_dir)
 
 
+def file_sha256(path: Path) -> str:
+    """Hash a file with bounded memory, including large snapshot artifacts."""
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
 class SnapshotStore:
     """All writes stay inside one run directory and are serialized by flock."""
 
@@ -111,7 +118,9 @@ class SnapshotStore:
         self.lock_path = self.run_dir / ".lock"
         self.run_lock_path = self.run_dir / ".run-lock"
         self.init_marker = self.run_dir / ".initializing"
-        self._stream_index: dict[tuple[str, str], dict[Any, str]] = {}
+        self._stream_index: dict[
+            tuple[str, str], tuple[_StreamFingerprint | None, dict[Any, str]]
+        ] = {}
 
     @contextmanager
     def lock(self) -> Iterator[None]:
@@ -216,11 +225,12 @@ class SnapshotStore:
     # ---------------------------------------------------------------- blobs
 
     def save_blob(self, payload: bytes) -> str:
+        if self.read_only:
+            raise StoreError("只读快照不允许写入 blob", source="store.blob")
         digest = hashlib.sha256(payload).hexdigest()
         path = self.secure_path(Path("blobs") / digest)
         if path.exists():
-            existing = path.read_bytes()
-            if hashlib.sha256(existing).hexdigest() != digest:
+            if file_sha256(path) != digest:
                 raise StoreError(
                     f"blob 内容损坏：{digest}",
                     source="store.blob",
@@ -231,16 +241,15 @@ class SnapshotStore:
         return digest
 
     def read_blob(self, digest: str) -> bytes:
-        if not SHA256_RE.fullmatch(digest):
-            raise StoreError(f"非法 blob hash：{digest}", source="store.blob")
-        path = self.secure_path(Path("blobs") / digest)
-        if not path.is_file():
+        path = self._blob_path(digest)
+        try:
+            payload = path.read_bytes()
+        except OSError as exc:
             raise StoreError(
-                f"blob 不存在：{digest}",
+                f"无法读取 blob：{digest}",
                 source="store.blob",
-                recovery="重新采集该证据或标记缺失",
-            )
-        payload = path.read_bytes()
+                details={"reason": str(exc)},
+            ) from exc
         if hashlib.sha256(payload).hexdigest() != digest:
             raise StoreError(
                 f"blob hash 不匹配：{digest}",
@@ -249,8 +258,34 @@ class SnapshotStore:
             )
         return payload
 
+    def _blob_path(self, digest: str) -> Path:
+        if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+            raise StoreError(f"非法 blob hash：{digest}", source="store.blob")
+        path = self.secure_path(Path("blobs") / digest)
+        if not path.is_file():
+            raise StoreError(
+                f"blob 不存在：{digest}",
+                source="store.blob",
+                recovery="重新采集该证据或标记缺失",
+            )
+        return path
+
     def verify_blob(self, digest: str) -> None:
-        self.read_blob(digest)
+        path = self._blob_path(digest)
+        try:
+            actual = file_sha256(path)
+        except OSError as exc:
+            raise StoreError(
+                f"无法读取 blob：{digest}",
+                source="store.blob",
+                details={"reason": str(exc)},
+            ) from exc
+        if actual != digest:
+            raise StoreError(
+                f"blob hash 不匹配：{digest}",
+                source="store.blob",
+                recovery="保留快照用于诊断，不要静默覆盖",
+            )
 
     # ----------------------------------------------------------------- json
 
@@ -296,9 +331,15 @@ class SnapshotStore:
             return json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError as exc:
             raise StoreError(f"JSON 文件不存在：{relpath}", source="store.read_json") from exc
-        except json.JSONDecodeError as exc:
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise StoreError(
                 f"JSON 损坏：{relpath}",
+                source="store.read_json",
+                details={"reason": str(exc)},
+            ) from exc
+        except OSError as exc:
+            raise StoreError(
+                f"无法读取 JSON 文件：{relpath}",
                 source="store.read_json",
                 details={"reason": str(exc)},
             ) from exc
@@ -410,6 +451,7 @@ class SnapshotStore:
                 os.fsync(handle.fileno())
             if key in record:
                 index[record[key]] = canonical_json(record)
+            self._cache_index(path, key, index)
             self._fsync_dir(path.parent)
 
     def read_jsonl(self, relpath: str | Path, *, repair: bool = False) -> list[dict[str, Any]]:
@@ -421,8 +463,7 @@ class SnapshotStore:
                 self._repair_stream_unlocked(path)
                 return self._load_jsonl_unlocked(path)
         with self.lock_shared():
-            data = path.read_bytes()
-            if data and not data.endswith(b"\n"):
+            if self._has_partial_tail(path):
                 raise StoreError(
                     f"JSONL 末尾存在未完成写入：{relpath}",
                     source="store.jsonl",
@@ -517,6 +558,7 @@ class SnapshotStore:
                     }
                 )
                 return []
+            valid_records = []
             for record in records:
                 try:
                     validate_document(record, schema_name)
@@ -531,7 +573,11 @@ class SnapshotStore:
                             "details": exc.details,
                         }
                     )
-            return records
+                else:
+                    valid_records.append(record)
+            # Invalid shapes must remain diagnostics, never inputs to the
+            # reference and quote checks below (which require typed IDs).
+            return valid_records
 
         entities = load_stream("normalized/entities.jsonl", "entity")
         evidence = load_stream("normalized/evidence.jsonl", "evidence")
@@ -787,6 +833,7 @@ class SnapshotStore:
         if self.secure_path(CANDIDATES_PATH).is_file():
             try:
                 candidates_document = self.read_json(CANDIDATES_PATH)
+                validate_document(candidates_document, "candidates")
             except RERError:
                 candidates_document = None
         problems.extend(
@@ -930,20 +977,39 @@ class SnapshotStore:
 
     def _index_for(self, path: Path, key: str) -> dict[Any, str]:
         cache_key = self._index_key(path, key)
-        index = self._stream_index.get(cache_key)
-        if index is None:
-            index = {}
-            for item in self._load_jsonl_unlocked(path):
-                if key in item:
-                    index[item[key]] = canonical_json(item)
-            self._stream_index[cache_key] = index
+        fingerprint = self._stream_fingerprint(path)
+        cached = self._stream_index.get(cache_key)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        index = {}
+        for item in self._load_jsonl_unlocked(path):
+            if key in item:
+                index[item[key]] = canonical_json(item)
+        self._stream_index[cache_key] = (fingerprint, index)
         return index
 
     def _replace_index(self, path: Path, key: str, records: Iterable[dict[str, Any]]) -> None:
-        self._invalidate_stream(path)
-        self._stream_index[self._index_key(path, key)] = {
+        index = {
             item[key]: canonical_json(item) for item in records if key in item
         }
+        self._cache_index(path, key, index)
+
+    def _cache_index(self, path: Path, key: str, index: dict[Any, str]) -> None:
+        # A write also invalidates indexes built for other deduplication keys.
+        self._invalidate_stream(path)
+        self._stream_index[self._index_key(path, key)] = (
+            self._stream_fingerprint(path), index,
+        )
+
+    @staticmethod
+    def _stream_fingerprint(path: Path) -> _StreamFingerprint | None:
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            return None
+        # Check under the shared storage lock: another store may have written
+        # since this instance populated its index, even without changing size.
+        return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
 
     def _invalidate_stream(self, path: Path) -> None:
         stream = str(path)

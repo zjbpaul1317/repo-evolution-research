@@ -76,6 +76,42 @@ def test_blob_dedupe_and_hash_checks(tmp_path: Path) -> None:
         store.read_blob(digest)
 
 
+def test_streaming_blob_verification_detects_same_size_corruption(tmp_path: Path) -> None:
+    store, _ = make_store(tmp_path)
+    payload = b"original\x00\xff\r\n" * 25000
+    digest = store.save_blob(payload)
+    assert store.verify_blob(digest) is None
+    path = store.secure_path(f"blobs/{digest}")
+    path.write_bytes(b"X" + payload[1:])
+    with pytest.raises(StoreError, match="hash 不匹配"):
+        store.verify_blob(digest)
+    with pytest.raises(StoreError, match="内容损坏"):
+        store.save_blob(payload)
+
+
+@pytest.mark.parametrize("digest", [None, [], 123, "not-a-hash"])
+def test_blob_apis_report_invalid_hash_as_store_error(tmp_path, digest) -> None:
+    store, _ = make_store(tmp_path)
+    with pytest.raises(StoreError):
+        store.read_blob(digest)
+    with pytest.raises(StoreError):
+        store.verify_blob(digest)
+
+
+def test_read_json_reports_invalid_utf8_and_io_errors(tmp_path, monkeypatch) -> None:
+    store, _ = make_store(tmp_path)
+    store.write_bytes("bad.json", b"\xff")
+    with pytest.raises(StoreError, match="JSON 损坏"):
+        store.read_json("bad.json")
+
+    def denied(*args, **kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "read_text", denied)
+    with pytest.raises(StoreError, match="无法读取 JSON"):
+        store.read_json("config.resolved.json")
+
+
 def test_write_json_is_atomic_and_schema_checked(tmp_path: Path) -> None:
     store, config = make_store(tmp_path)
     path = store.write_json("config.resolved.json", config, schema_name="config")
@@ -215,6 +251,53 @@ def test_append_jsonl_can_replace_existing_record(tmp_path: Path) -> None:
         on_conflict="replace",
     )
     assert store.read_jsonl("normalized/entities.jsonl") == [{"id": "a", "value": 2}]
+
+
+def test_append_jsonl_reloads_index_after_another_writer(tmp_path: Path) -> None:
+    store, _ = make_store(tmp_path)
+    other = SnapshotStore(store.run_dir)
+    stream = "normalized/entities.jsonl"
+    store.append_jsonl(stream, {"id": "a", "value": 1})
+    other.append_jsonl(stream, {"id": "b", "value": 2})
+
+    with pytest.raises(StoreError):
+        store.append_jsonl(stream, {"id": "b", "value": 3})
+    store.append_jsonl(stream, {"id": "b", "value": 2})
+    assert store.read_jsonl(stream) == [{"id": "a", "value": 1}, {"id": "b", "value": 2}]
+
+
+@pytest.mark.parametrize("mutation", ["replace", "rewrite", "remove", "write_text"])
+def test_append_jsonl_does_not_skip_records_after_stream_changes(
+    tmp_path: Path, mutation: str,
+) -> None:
+    store, _ = make_store(tmp_path)
+    stream = "normalized/entities.jsonl"
+    store.append_jsonl(stream, {"id": "a", "value": 1})
+    other = SnapshotStore(store.run_dir)
+    if mutation == "replace":
+        other.write_jsonl(stream, [{"id": "b", "value": 1}])
+    elif mutation == "rewrite":
+        # Same inode and byte count: size alone cannot validate the cached index.
+        store.secure_path(stream).write_text('{"id": "b", "value": 1}\n', encoding="utf-8")
+    elif mutation == "remove":
+        other.remove_file(stream)
+    else:
+        store.write_text(stream, '{"id": "b", "value": 1}\n')
+    store.append_jsonl(stream, {"id": "a", "value": 1})
+    expected = [] if mutation == "remove" else [{"id": "b", "value": 1}]
+    assert store.read_jsonl(stream) == [*expected, {"id": "a", "value": 1}]
+
+
+def test_append_jsonl_invalidates_indexes_with_other_keys(tmp_path: Path) -> None:
+    store, _ = make_store(tmp_path)
+    stream = "raw/multiple-keys.jsonl"
+    first = {"id": "a", "number": 1}
+    second = {"id": "b", "number": 2}
+    store.append_jsonl(stream, first)
+    store.append_jsonl(stream, first, key="number")
+    store.append_jsonl(stream, second)
+    store.append_jsonl(stream, second, key="number")
+    assert store.read_jsonl(stream) == [first, second]
 
 
 def test_append_jsonl_recovers_partial_tail(tmp_path: Path) -> None:

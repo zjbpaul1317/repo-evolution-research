@@ -16,6 +16,7 @@ from rer.models import (
     make_entity,
     make_evidence,
     make_locator,
+    resolve_json_pointer,
     validate_document,
     verify_evidence_quote,
 )
@@ -516,6 +517,40 @@ def test_evidence_quote_detects_bad_pointer() -> None:
     matched, reason = verify_evidence_quote(evidence, b'{"body": "x"}')
     assert not matched
     assert reason == "pointer_not_found"
+
+
+@pytest.mark.parametrize("token", ["-1", "+1", "01", " 1", "1 ", "１", "-", "1_0"])
+def test_evidence_rejects_nonstandard_array_indices(token: str) -> None:
+    evidence = {
+        "locator": {"format": "json_pointer", "pointer": f"/items/{token}"},
+        "text": "accepted",
+    }
+    payload = json.dumps({"items": ["accepted"] * 11}).encode()
+    assert verify_evidence_quote(evidence, payload) == (False, "pointer_not_found")
+
+
+@pytest.mark.parametrize("pointer", ["/a~2b", "/a~", "/a~~0b"])
+def test_evidence_rejects_invalid_pointer_escapes(pointer: str) -> None:
+    evidence = {"locator": {"format": "json_pointer", "pointer": pointer}, "text": "x"}
+    payload = json.dumps({"a~2b": "x", "a~": "x", "a~~b": "x"}).encode()
+    assert verify_evidence_quote(evidence, payload) == (False, "pointer_not_found")
+
+
+def test_json_pointer_preserves_object_keys_and_rfc6901_escapes() -> None:
+    document = {"": {"a/b": {"~1": ["zero", "one"]}}, "01": "leading", "-1": "negative"}
+    assert resolve_json_pointer(document, "") is document
+    assert resolve_json_pointer(document, "//a~1b/~01/1") == "one"
+    assert resolve_json_pointer(document, "/01") == "leading"
+    assert resolve_json_pointer(document, "/-1") == "negative"
+
+
+@pytest.mark.parametrize("url", ["https://[invalid", "https://[not-ipv6]/", "https://a：b/"])
+def test_malformed_uri_is_a_schema_error(url: str) -> None:
+    entity = load("entity.sample.json")
+    entity["url"] = url
+    with pytest.raises(ValidationFailure) as error:
+        validate_document(entity, "entity")
+    assert error.value.details["errors"][0]["validator"] == "format"
 
 
 def test_evidence_quote_supports_char_and_line_ranges() -> None:

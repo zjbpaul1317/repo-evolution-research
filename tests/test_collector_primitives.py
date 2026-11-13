@@ -5,7 +5,13 @@ from typing import Any
 
 import pytest
 
-from rer.collectors.pages import FetchResult, build_section, fetch_rest_list
+from rer.collectors.pages import (
+    FetchResult,
+    SectionSpec,
+    build_section,
+    fetch_rest_list,
+    fetch_section_result,
+)
 from rer.collectors.selection import quota_for_budget
 from rer.collectors.values import reaction_count, window_bounds
 from rer.errors import GitHubNotFoundError, GitHubRateLimitError
@@ -133,6 +139,61 @@ def test_build_section_404_without_items_is_unavailable() -> None:
     assert section["status"] == "unavailable"
     assert section["truncated"] is False
     assert section["truncation_reason"] == "not_found"
+
+
+@pytest.mark.parametrize(
+    ("data", "expected_status", "expected_items"),
+    [
+        ([{"id": 1}, None, 42], "partial", [{"id": 1}]),
+        ([None, "invalid"], "unavailable", []),
+        ([], "complete", []),
+    ],
+)
+def test_section_does_not_silently_drop_invalid_items(
+    data, expected_status, expected_items,
+) -> None:
+    section, result = fetch_section_result(
+        FakeClient([page(data)]),
+        SectionSpec("comments", "items", parse_item=dict),
+        owner="acme",
+        name="demo",
+        number=1,
+    )
+    assert section["items"] == expected_items
+    assert section["status"] == result.status == expected_status
+    assert section["truncation_reason"] == ("comments_items_invalid" if data else None)
+
+
+def test_invalid_section_items_preserve_a_later_request_failure() -> None:
+    section, result = fetch_section_result(
+        FakeClient([page([None, {"id": 1}]), GitHubNotFoundError("gone", source="test")]),
+        SectionSpec("comments", "items", parse_item=dict),
+        owner="acme",
+        name="demo",
+        number=1,
+    )
+    assert section["items"] == [{"id": 1}]
+    assert section["status"] == "partial"
+    assert section["truncation_reason"] == result.reason
+    assert "not_found" in result.reason
+    assert "comments_items_invalid" in result.reason
+
+
+def test_cap_without_custom_reason_still_reports_partial() -> None:
+    result = fetch_rest_list(FakeClient([page([1, 2, 3])]), "items", cap=2)
+    assert result.items == [1, 2]
+    assert result.status == "partial"
+    assert result.reason == "item_cap"
+
+
+def test_total_mismatch_without_custom_reason_has_a_diagnostic() -> None:
+    section = build_section(
+        FetchResult(items=[], status="complete", pages=1, reason=None),
+        [],
+        total_known=1,
+    )
+    assert section["status"] == "partial"
+    assert section["truncation_reason"] == "total_mismatch"
 
 
 def test_window_bounds_reports_invalid_timestamp_and_order_separately() -> None:

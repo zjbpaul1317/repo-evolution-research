@@ -34,7 +34,8 @@ _HEADER_NAME_RE = re.compile(r"\A[A-Za-z0-9-]+\Z")
 
 Runner = Callable[[list[str], str | None], "CommandResult"]
 
-_HTTP_STATUS_RE = re.compile(r"^HTTP/\S+\s+(\d{3})[^\n]*$", re.MULTILINE)
+_HTTP_STATUS_RE = re.compile(r"HTTP/\S+[ \t]+(\d{3})(?:[ \t][^\r\n]*)?(?:\r?\n|\Z)")
+_HTTP_HEADER_END_RE = re.compile(r"\r?\n\r?\n")
 _LINK_RE = re.compile(r'<([^>]+)>;\s*rel="([^"]+)"')
 _TOKEN_RE = re.compile(r"\b(?:gh[pous]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{20,})\b")
 _ETAG_CACHE_PATH = "cache/http-etag.json"
@@ -103,11 +104,8 @@ def default_runner(argv: list[str], input_text: str | None) -> CommandResult:
     try:
         completed = subprocess.run(
             argv,
-            input=input_text,
+            input=input_text.encode("utf-8") if input_text is not None else None,
             capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=120,
             check=False,
             shell=False,
@@ -117,7 +115,11 @@ def default_runner(argv: list[str], input_text: str | None) -> CommandResult:
         return CommandResult(124, "", "gh api timed out")
     except OSError as exc:
         return CommandResult(127, "", f"{type(exc).__name__}: {exc}")
-    return CommandResult(completed.returncode, completed.stdout, completed.stderr)
+    return CommandResult(
+        completed.returncode,
+        completed.stdout.decode("utf-8", errors="replace"),
+        completed.stderr.decode("utf-8", errors="replace"),
+    )
 
 
 def redact_secrets(text: str) -> str:
@@ -217,19 +219,24 @@ def validate_next_url(url: str) -> None:
 
 
 def parse_include_output(text: str) -> tuple[int | None, dict[str, str], str]:
-    """Parse `gh api --include` stdout into status, headers and body."""
-    normalized = text.replace("\r\n", "\n")
-    matches = list(_HTTP_STATUS_RE.finditer(normalized))
-    if not matches:
-        return None, {}, normalized
-    last = matches[-1]
-    status = int(last.group(1))
-    rest = normalized[last.end() :]
-    separator = rest.find("\n\n")
-    if separator < 0:
-        header_text, body = rest, ""
-    else:
-        header_text, body = rest[:separator], rest[separator + 2 :]
+    """Read leading HTTP headers without interpreting or normalizing the body."""
+    match = _HTTP_STATUS_RE.match(text)
+    if match is None:
+        return None, {}, text
+    while True:
+        status = int(match.group(1))
+        separator = _HTTP_HEADER_END_RE.search(text, match.start())
+        if separator is None:
+            header_text, body = text[match.end():], ""
+        else:
+            header_text = text[match.end():separator.start()]
+            body = text[separator.end():]
+            if 100 <= status < 200 and status != 101:
+                following = _HTTP_STATUS_RE.match(text, separator.end())
+                if following is not None:
+                    match = following
+                    continue
+        break
     headers: dict[str, str] = {}
     for line in header_text.splitlines():
         if ":" not in line:
@@ -581,6 +588,7 @@ class GitHubClient:
         url = endpoint
         query = dict(params or {})
         page = 1
+        seen_urls: set[str] = set()
         while True:
             result = self._cached_rest_page(
                 url,
@@ -599,6 +607,13 @@ class GitHubClient:
                     source="github.pagination",
                     details={"endpoint": sanitize_url(url)},
                 )
+            if next_url in seen_urls:
+                raise GitHubError(
+                    "REST 分页重复 Link 目标",
+                    source="github.pagination",
+                    details={"page": page, "endpoint": sanitize_url(next_url)},
+                )
+            seen_urls.add(next_url)
             url = next_url
             query = {}
             page += 1
@@ -658,6 +673,8 @@ class GitHubClient:
     ) -> Iterator[GraphQLPage]:
         cursor: str | None = None
         page = 1
+        initial_cursor = (variables or {}).get("cursor")
+        seen_cursors = {initial_cursor} if isinstance(initial_cursor, str) else set()
         while True:
             current = dict(variables or {})
             if cursor is not None:
@@ -679,7 +696,7 @@ class GitHubClient:
             if not isinstance(page_info, dict) or not page_info.get("hasNextPage"):
                 return
             cursor = page_info.get("endCursor")
-            if not cursor:
+            if not isinstance(cursor, str) or not cursor:
                 raise GitHubError(
                     "GraphQL 分页声明 hasNextPage 但缺少 endCursor",
                     source="github.pagination",
@@ -691,6 +708,13 @@ class GitHubClient:
                     source="github.pagination",
                     details={"path": "/".join(connection_path)},
                 )
+            if cursor in seen_cursors:
+                raise GitHubError(
+                    "GraphQL 分页重复 endCursor",
+                    source="github.pagination",
+                    details={"page": page, "path": "/".join(connection_path)},
+                )
+            seen_cursors.add(cursor)
             page += 1
 
     # --------------------------------------------------------------- request

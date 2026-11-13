@@ -8,6 +8,8 @@
 - 窗口成员使用各来源自己的时间键（活动视图不同、Release 用 `published_at`）。当前 API 返回的正文、标签和状态可能已在窗口结束后修改；默认报告说“研究 X–Y 期间活动，状态核对截至 Z”，不声称恢复了 Y 当天的完整状态。
 - 长文本一律写入 `blobs/`，权威文档只存 `text_ref`；不复制 GitHub 响应。
 - 可变单对象 REST GET 和分页 REST 列表使用 ETag 条件请求；304 复用 `cache/http-etag.json` 指向的本地 blob。列表页同时缓存 Link header，304 缺少 Link 时使用缓存或回退全量请求，避免静默少翻页。304 仍计入本地请求预算和子进程时间；缓存只影响传输成本，不进入 research ledger。
+- HTTP 传输只解释开头的状态与响应头，跳过前置的 informational 响应；成功响应正文里的 HTTP 示例属于来源数据。子进程输出显式以 UTF-8 解码（非法字节替换），正文换行保持原样；文本归一化仍由正文/evidence 层处理。
+- REST / GraphQL 通用分页拒绝重复 Link / cursor，按采集错误结束并保留已取得的页，不把循环当成 run-level 预算耗尽。
 - 可变材料在 collector 重建文档时每轮重读。只有绑定代码修订键且 section 完整的 `files` / `commits` 可以复用；selection 对 section 已完整且未请求补读的对象复用快照（`already_read`），不重新请求。
 - 窗口外材料可以作为背景或后续观察，但必须标明 `context` 或“后续观察”，不能计入窗口内活动。
 
@@ -44,6 +46,7 @@
 - 再次 collect 时，已有权威 PR 文档会以 `already_read` 原因保留为已选候选并重新校验可变 section；它们不占新的 deep entity 名额，未变化记 `skipped_unchanged`，避免已有深读在预算耗尽后被 coverage 误记为 `not_requested`。
 - 每个选中 PR 读取 detail、files、commits、issue comments、reviews、review comments，并通过 GraphQL 读取 review thread 的 `isResolved` / `isOutdated` / 关联 comment databaseId，写一份权威文档 `raw/pr-details/<number>.json`。长文本和 patch 进 `blobs/`；entity 的 `raw_state.deep_read` 只存 `detail_path`、`head_sha`、`observed_at` 指针。
 - `review_threads` 只保存线程元数据和 comment ID，评论正文仍在 `review_comments`；GraphQL 失败或权限不足时 section 记 `unavailable` / `partial`，不伪造 `isResolved=false`。线程内评论超过 100 条时用 `node(id)` 继续分页，单线程最多 10 页、单 PR 最多 20 次后续请求；触顶、cursor 缺失、comments connection 缺失或 GraphQL 错误时保留已取 ID，并记 `review_threads_comments_budget_capped` / `review_threads_comments_cursor_missing` / `review_threads_comments_connection_missing` / `review_threads_comments_graphql_errors` / `review_threads_comments_truncated`。线程可随 review 操作变化，因此每次重建 PR 文档都重读，不复用旧 section。阅读包只展示 status/fetched/resolved/unresolved/outdated 统计，完整线程通过 raw refs 展开。
+- Review Thread 外层列表最多使用客户端 `max_pages`（默认 100 页），触顶记 `review_threads_page_limit`；外层/评论游标重复记 `review_threads_cursor_repeated` / `review_threads_comments_cursor_repeated`。后续页失败且已有线程时保留 `partial`，没有线程可用时记 `unavailable`。GraphQL partial data 中有效的 comment ID 仍保留；失败的评论后续请求也计入上述 20 次限额。
 - `head.sha` 在读取开始和结束之间变化时置 `head_changed`，PR 标 `partial`；不能当作一次一致观察。`squash_rebase_unverified` 表示未重建最终合并补丁。
 - 当前版本不抓完整 diff：`pr_detail.diff.status` 恒为 `not_requested`，schema 字段保留给未来选项。
 - `files` 上限 3000、`commits` 上限 250；二进制或超大文件可能没有 patch。这些是固有缺口，记录在 coverage/limitations，但 `pr_detail` 只在 `unavailable` 时阻塞运行。
@@ -81,6 +84,7 @@
 - 分页漂移产生的重复项必须去重：PR files/commits/comments/reviews 分别按 `filename`/`sha`/`id`，Issue comments/timeline 按 `id`，Discussion comments/replies 按 node `id`。重复计数写入 section 的 `duplicates`，并在 limitations 与 coverage `truncation_reason` 记 `pagination_duplicates`。
 - `state_reason=not_planned` / `duplicate` 记 `closed_not_planned` / `closed_as_duplicate`；`closed` 不自动等于已修复。对象不存在（删除、私有、无权）是持久事实，候选记 `skipped_reason` 并移出 selected，不把通道推成 `unavailable`；访问失败记 `failed`。
 - replies 截断必须区分 `replies_continuation_limit`、`replies_page_limit`、`replies_graphql_errors`、`replies_pagination_incomplete`。
+- Discussion comments / replies 重复游标分别记 `pagination_cursor_repeated` / `replies_cursor_repeated:<commentId>`；回复总数不足与畸形节点分别记 `replies_total_mismatch:<commentId>` / `replies_nodes_invalid:<commentId>`。有效节点继续保留，后续分页不得清除这些已知缺口的 `partial` 状态。
 - 通道另有 `MAX_PROPOSAL_REQUESTS=80`；耗尽时停止剩余候选，记 `budget_exceeded` / `proposal_request_limit`，channel 保持 `partial`，不终止整轮 collect。
 
 ## 覆盖通道与阻塞

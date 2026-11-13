@@ -77,6 +77,7 @@ class _ThreadItem:
     comments_has_next: bool
     comments_cursor: str | None
     comments_missing: bool = False
+    comments_invalid: bool = False
 
 
 @dataclass
@@ -87,6 +88,8 @@ class _CommentPagination:
     errors: bool = False
     connection_missing: bool = False
     cursor_missing: bool = False
+    cursor_repeated: bool = False
+    nodes_invalid: bool = False
 
 
 def read_review_threads(
@@ -102,10 +105,13 @@ def read_review_threads(
     items: dict[str, dict[str, Any]] = {}
     total_known: int | None = None
     errors = False
+    unavailable = False
+    nodes_invalid = False
     reason_parts: list[str] = []
     comments_truncated = False
     duplicates = 0
     comment_state = _CommentPagination()
+    seen_cursors: set[str] = set()
 
     while True:
         variables: dict[str, Any] = {
@@ -124,16 +130,9 @@ def read_review_threads(
         except FATAL_ERRORS:
             raise
         except GitHubError:
-            return ReviewThreadRead(
-                section=_section(
-                    status="unavailable",
-                    fetched=len(items),
-                    total_known=total_known,
-                    reason="review_threads_unavailable",
-                    items=list(items.values()),
-                ),
-                pages=pages,
-            )
+            unavailable = True
+            reason_parts.append("review_threads_unavailable")
+            break
         pages += 1
         if result.errors:
             errors = True
@@ -144,27 +143,19 @@ def read_review_threads(
             "reviewThreads",
         )
         if not isinstance(connection, Mapping):
-            if not items:
-                return ReviewThreadRead(
-                    section=_section(
-                        status="unavailable",
-                        fetched=0,
-                        total_known=None,
-                        reason="review_threads_connection_missing",
-                        items=[],
-                    ),
-                    pages=pages,
-                )
+            unavailable = True
             reason_parts.append("review_threads_connection_missing")
             break
         if total_known is None:
             total_known = as_optional_int(connection.get("totalCount"))
         nodes = connection.get("nodes")
-        if isinstance(nodes, list):
+        if not isinstance(nodes, list):
+            nodes_invalid = True
+        else:
             for node in nodes:
                 parsed = _thread_item(node)
                 if parsed is None:
-                    errors = True
+                    nodes_invalid = True
                     continue
                 item = parsed.item
                 identifier = str(item["id"])
@@ -172,6 +163,9 @@ def read_review_threads(
                     duplicates += 1
                     continue
                 items[identifier] = item
+                if parsed.comments_invalid:
+                    comment_state.nodes_invalid = True
+                    item["comments_truncated"] = True
                 if parsed.comments_missing:
                     comment_state.connection_missing = True
                     item["comments_truncated"] = True
@@ -185,6 +179,7 @@ def read_review_threads(
                             item,
                             parsed.comments_cursor,
                             comment_state,
+                            invalid_nodes=parsed.comments_invalid,
                         )
                 if item["comments_truncated"]:
                     comments_truncated = True
@@ -195,18 +190,31 @@ def read_review_threads(
         if not isinstance(cursor_value, str) or not cursor_value:
             reason_parts.append("review_threads_cursor_missing")
             break
+        if cursor_value in seen_cursors:
+            reason_parts.append("review_threads_cursor_repeated")
+            break
+        if page >= getattr(client, "max_pages", 100):
+            reason_parts.append("review_threads_page_limit")
+            break
+        seen_cursors.add(cursor_value)
         cursor = cursor_value
         page += 1
 
     pages += comment_state.pages
     if errors:
         reason_parts.append("graphql_errors")
+    if nodes_invalid:
+        reason_parts.append("review_threads_nodes_invalid")
     if comment_state.errors:
         reason_parts.append("review_threads_comments_graphql_errors")
     if comment_state.connection_missing:
         reason_parts.append("review_threads_comments_connection_missing")
     if comment_state.cursor_missing:
         reason_parts.append("review_threads_comments_cursor_missing")
+    if comment_state.cursor_repeated:
+        reason_parts.append("review_threads_comments_cursor_repeated")
+    if comment_state.nodes_invalid:
+        reason_parts.append("review_threads_comments_nodes_invalid")
     if comment_state.capped:
         reason_parts.append("review_threads_comments_budget_capped")
     if comments_truncated:
@@ -217,7 +225,7 @@ def read_review_threads(
         reason_parts.append(f"pagination_duplicates:{duplicates}")
     reason = "; ".join(dict.fromkeys(reason_parts)) or None
     status = "partial" if reason else "complete"
-    if not items and errors:
+    if not items and (errors or unavailable or nodes_invalid):
         status = "unavailable"
     return ReviewThreadRead(
         section=_section(
@@ -237,10 +245,18 @@ def _complete_comment_pages(
     item: dict[str, Any],
     cursor: str,
     state: _CommentPagination,
+    *,
+    invalid_nodes: bool = False,
 ) -> None:
     seen = set(item.get("comment_ids") or [])
+    seen_cursors: set[str] = set()
     thread_pages = 0
     while True:
+        if cursor in seen_cursors:
+            state.cursor_repeated = True
+            item["comment_ids"] = sorted(seen)
+            item["comments_truncated"] = True
+            return
         if state.requests >= MAX_THREAD_COMMENT_REQUESTS:
             state.capped = True
             item["comment_ids"] = sorted(seen)
@@ -251,11 +267,13 @@ def _complete_comment_pages(
             item["comment_ids"] = sorted(seen)
             item["comments_truncated"] = True
             return
+        seen_cursors.add(cursor)
+        state.requests += 1
         try:
             result = client.graphql(
                 REVIEW_THREAD_COMMENTS_QUERY,
                 variables={"threadId": item["id"], "cursor": cursor},
-                page=state.requests + 1,
+                page=state.requests,
             )
         except FATAL_ERRORS:
             raise
@@ -264,14 +282,10 @@ def _complete_comment_pages(
             item["comment_ids"] = sorted(seen)
             item["comments_truncated"] = True
             return
-        state.requests += 1
         state.pages += 1
         thread_pages += 1
         if result.errors:
             state.errors = True
-            item["comment_ids"] = sorted(seen)
-            item["comments_truncated"] = True
-            return
         connection = get_in(result.data, "node", "comments")
         if not isinstance(connection, Mapping):
             state.connection_missing = True
@@ -282,15 +296,23 @@ def _complete_comment_pages(
         if total is not None:
             item["comments_total"] = total
         nodes = connection.get("nodes")
-        if isinstance(nodes, list):
+        if not isinstance(nodes, list):
+            state.nodes_invalid = invalid_nodes = True
+        else:
             for node in nodes:
                 value = (
                     as_optional_int(get_in(node, "databaseId"))
                     if isinstance(node, Mapping)
                     else None
                 )
-                if value is not None and value not in seen:
+                if value is None:
+                    state.nodes_invalid = invalid_nodes = True
+                elif value not in seen:
                     seen.add(value)
+        if result.errors:
+            item["comment_ids"] = sorted(seen)
+            item["comments_truncated"] = True
+            return
         page_info = connection.get("pageInfo")
         if not isinstance(page_info, Mapping) or not page_info.get("hasNextPage"):
             break
@@ -303,7 +325,7 @@ def _complete_comment_pages(
         cursor = next_cursor
     item["comment_ids"] = sorted(seen)
     total = item.get("comments_total")
-    item["comments_truncated"] = bool(total is not None and total > len(seen))
+    item["comments_truncated"] = invalid_nodes or bool(total is not None and total > len(seen))
 
 
 def _section(
@@ -339,17 +361,22 @@ def _thread_item(raw: Any) -> _ThreadItem | None:
     comments_has_next = False
     comments_cursor: str | None = None
     comments_missing = not isinstance(comments, Mapping)
+    comments_invalid = False
     if isinstance(comments, Mapping):
         comments_total = as_optional_int(comments.get("totalCount"))
         nodes = comments.get("nodes")
-        if isinstance(nodes, list):
+        if not isinstance(nodes, list):
+            comments_invalid = True
+        else:
             for node in nodes:
                 value = (
                     as_optional_int(get_in(node, "databaseId"))
                     if isinstance(node, Mapping)
                     else None
                 )
-                if value is not None and value not in comment_ids:
+                if value is None:
+                    comments_invalid = True
+                elif value not in comment_ids:
                     comment_ids.append(value)
         if comments_total is not None and comments_total > len(comment_ids):
             comments_truncated = True
@@ -375,6 +402,7 @@ def _thread_item(raw: Any) -> _ThreadItem | None:
         comments_has_next=comments_has_next,
         comments_cursor=comments_cursor,
         comments_missing=comments_missing,
+        comments_invalid=comments_invalid,
     )
 
 

@@ -21,7 +21,7 @@ from .errors import (
     ValidationFailure,
 )
 from .models import validate_document
-from .store import SHA256_RE, SnapshotStore
+from .store import SHA256_RE, SnapshotStore, file_sha256
 from .validation import (
     RESEARCH_PATH,
     VALIDATION_PATH,
@@ -475,7 +475,7 @@ def audit_report_artifacts(
                         "message": "render-report 存在，但 report.md 缺失",
                     }
                 )
-            elif sha256_hex(report_path.read_bytes()) != record.get("report_sha256"):
+            elif file_sha256(report_path) != record.get("report_sha256"):
                 problems.append(
                     {
                         "artifact": REPORT_PATH,
@@ -508,7 +508,7 @@ def audit_report_artifacts(
             elif (
                 validation_path.is_file()
                 and record.get("validation_sha256")
-                != sha256_hex(validation_path.read_bytes())
+                != file_sha256(validation_path)
             ):
                 problems.append(
                     {

@@ -63,9 +63,9 @@ def load_agent_selection(
         return None
     try:
         document = json.loads(selection_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValidationFailure(
-            "selection.json 不是合法 JSON",
+            "无法读取 selection.json 或内容不是合法 UTF-8 JSON",
             source="selection.load",
             details={"path": str(selection_path), "reason": str(exc)},
         ) from exc

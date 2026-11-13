@@ -878,6 +878,64 @@ def test_discussion_pagination_duplicates_are_deduped(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("mode", "expected_reason", "expected_requests", "reply_ids"),
+    [
+        ("comment_cycle", "pagination_cursor_repeated", 2, []),
+        ("reply_cycle", "replies_cursor_repeated:DC_1", 2, ["DC_2"]),
+        ("initial_mismatch", "replies_total_mismatch:DC_1", 1, []),
+        ("continued_mismatch", "replies_total_mismatch:DC_1", 2, ["DC_2"]),
+        ("malformed_reply", "replies_nodes_invalid:DC_1", 2, ["DC_2"]),
+        ("initial_malformed", "replies_nodes_invalid:DC_1", 2, ["DC_2"]),
+    ],
+)
+def test_discussion_pagination_gaps_preserve_partial_data(
+    tmp_path: Path, mode: str, expected_reason: str,
+    expected_requests: int, reply_ids: list[str],
+) -> None:
+    store = make_store(tmp_path)
+    write_discussion_stream(store, [discussion_raw()])
+
+    def handler(argv: list[str], input_text: str):
+        query = json.loads(input_text)["query"]
+        if "node(id:" in query:
+            nodes = [{
+                "id": "DC_2", "databaseId": 2, "body": "Valid reply",
+                "createdAt": "2026-06-03T00:00:00Z",
+                "updatedAt": "2026-06-03T00:00:00Z", "author": {"login": "carol"},
+            }]
+            if mode == "malformed_reply":
+                nodes.append({"body": "Missing node ID"})
+            return http_response(200, {"data": {"node": {"replies": {
+                "totalCount": 3 if mode == "continued_mismatch" else 1,
+                "nodes": nodes,
+                "pageInfo": {"hasNextPage": mode == "reply_cycle", "endCursor": "r1"},
+            }}}})
+        payload = discussion_payload(has_next=mode == "comment_cycle")
+        comment = payload["data"]["repository"]["discussion"]["comments"]["nodes"][0]
+        if mode != "comment_cycle":
+            comment["replies"] = {
+                "totalCount": 3 if mode == "initial_mismatch" else 1,
+                "nodes": [{"body": "Missing node ID"}] if mode == "initial_malformed" else [],
+                "pageInfo": {"hasNextPage": mode != "initial_mismatch", "endCursor": "r1"},
+            }
+        return http_response(200, payload)
+
+    client = make_client(store, handler)
+    collect_proposals(context_for(client, store), activity_window=WINDOW)
+    document = load_discussion_documents(store)[0]
+    comments = document["comments"]
+    assert comments["status"] == "partial"
+    assert expected_reason in comments["truncation_reason"]
+    assert client.usage["requests"] == expected_requests
+    assert [item["id"] for item in comments["items"]] == ["DC_1"]
+    replies = comments["items"][0]
+    assert [reply["id"] for reply in replies["replies"]] == reply_ids
+    if mode != "comment_cycle":
+        assert replies["replies_status"] == "partial"
+        assert replies["replies_truncated"] is True
+
+
 def test_discussion_not_requested_when_disabled(tmp_path: Path) -> None:
     store = make_store(tmp_path)
     write_discussion_stream(store, [discussion_raw()])
@@ -1144,6 +1202,7 @@ def test_replies_continuation_limit_reason(
     monkeypatch.setattr(discussions_module, "MAX_REPLY_PAGES", 100)
     store = make_store(tmp_path)
     write_discussion_stream(store, [discussion_raw()])
+    continuation = 0
 
     def comment_payload():
         return discussion_payload(
@@ -1166,12 +1225,16 @@ def test_replies_continuation_limit_reason(
         )
 
     def reply_payload():
+        nonlocal continuation
+        continuation += 1
         return {
             "data": {
                 "node": {
                     "replies": {
                         "totalCount": 100,
-                        "pageInfo": {"hasNextPage": True, "endCursor": "r2"},
+                        "pageInfo": {
+                            "hasNextPage": True, "endCursor": f"r{continuation + 1}",
+                        },
                         "nodes": [
                             {
                                 "id": "DC_2",
@@ -1293,6 +1356,46 @@ def test_budget_exhaustion_degrades_to_partial(tmp_path: Path) -> None:
     channels = {item["channel"]: item for item in result.coverage}
     assert channels["issue_detail"]["coverage_status"] == "partial"
     assert "budget_exceeded" in channels["issue_detail"]["truncation_reason"]
+
+
+@pytest.mark.parametrize("failed_section", ["comments", "replies"])
+def test_discussion_keeps_comments_when_a_later_request_fails(
+    tmp_path: Path, failed_section: str,
+) -> None:
+    store = make_store(tmp_path)
+    write_discussion_stream(store, [discussion_raw()])
+
+    def handler(argv: list[str], input_text: str):
+        variables = json.loads(input_text)["variables"]
+        if variables.get("cursor"):
+            return http_response(422, {"message": "request failed"})
+        comment = {
+            "id": "DC_1", "databaseId": 1, "body": "Keep this comment",
+            "replies": {
+                "totalCount": 1 if failed_section == "replies" else 0,
+                "nodes": [],
+                "pageInfo": {
+                    "hasNextPage": failed_section == "replies", "endCursor": "reply-next",
+                },
+            },
+        }
+        payload = discussion_payload(comments=[comment])
+        if failed_section == "comments":
+            connection = payload["data"]["repository"]["discussion"]["comments"]
+            connection["totalCount"] = 2
+            connection["pageInfo"] = {"hasNextPage": True, "endCursor": "comment-next"}
+        return http_response(200, payload)
+
+    client = make_client(store, handler)
+    collect_proposals(context_for(client, store), activity_window=WINDOW)
+    document = load_discussion_documents(store)[0]
+    assert document["comments"]["status"] == "partial"
+    assert document["comments"]["items"][0]["id"] == "DC_1"
+    assert document["comments"]["items"][0]["body"]["preview"] == "Keep this comment"
+    expected_reason = (
+        "comments_unavailable" if failed_section == "comments" else "replies_unavailable:DC_1"
+    )
+    assert expected_reason in document["comments"]["truncation_reason"]
 
 
 def test_proposal_request_limit_stops_remaining_candidates(

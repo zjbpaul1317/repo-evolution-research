@@ -802,6 +802,150 @@ def test_review_threads_paginate_long_comment_thread(tmp_path: Path) -> None:
     assert calls[1]["cursor"] == "cursor-1"
 
 
+@pytest.mark.parametrize("mode", ["page_limit", "repeated_cursor", "later_error", "last_page"])
+def test_review_thread_list_stops_and_preserves_partial_results(
+    tmp_path: Path, mode: str,
+) -> None:
+    calls = 0
+
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        nonlocal calls
+        calls += 1
+        if mode == "later_error" and calls == 2:
+            return http_response(422, {"message": "query failed"})
+        return http_response(200, {"data": {"repository": {"pullRequest": {
+            "reviewThreads": {
+                "totalCount": 2 if mode == "last_page" else 20,
+                "nodes": [review_thread_node(f"PRRT_{calls}", [calls])],
+                "pageInfo": {
+                    "hasNextPage": not (mode == "last_page" and calls == 2),
+                    "endCursor": "same" if mode == "repeated_cursor" else f"page-{calls}",
+                },
+            },
+        }}}})
+
+    store, client = make_client(tmp_path, default_handler(), graphql_handler=graphql_handler)
+    client.max_pages = 2
+    seed(store, [10])
+    collect_pull_requests(client, store, REPOSITORY, activity_window=WINDOW)
+    document = load_pr_document(store, 10)
+    threads = document["review_threads"]
+    assert threads["status"] == ("complete" if mode == "last_page" else "partial")
+    reason = {
+        "page_limit": "review_threads_page_limit",
+        "repeated_cursor": "review_threads_cursor_repeated",
+        "later_error": "review_threads_unavailable",
+        "last_page": None,
+    }[mode]
+    if reason is None:
+        assert threads["truncation_reason"] is None
+    else:
+        assert reason in threads["truncation_reason"]
+    assert threads["fetched"] == (1 if mode == "later_error" else 2)
+    assert calls == 2
+
+
+def test_review_thread_comment_failures_count_toward_request_limit(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    monkeypatch.setattr(review_threads_module, "MAX_THREAD_COMMENT_REQUESTS", 2)
+    calls = 0
+
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        nonlocal calls
+        variables = json.loads(input_text or "{}")["variables"]
+        if "threadId" not in variables:
+            return review_threads_response([
+                review_thread_node(f"PRRT_{i}", [i], total=2, has_next=True, cursor="next")
+                for i in range(3)
+            ])
+        calls += 1
+        return http_response(422, {"message": "query failed"})
+
+    _store, client = make_client(tmp_path, default_handler(), graphql_handler=graphql_handler)
+    result = review_threads_module.read_review_threads(client, owner="acme", name="demo", number=10)
+    assert calls == 2
+    assert result.section["status"] == "partial"
+    assert "review_threads_comments_budget_capped" in result.section["truncation_reason"]
+
+
+@pytest.mark.parametrize("mode", ["repeated_cursor", "partial_data"])
+def test_review_thread_comments_preserve_ids_when_pagination_fails(
+    tmp_path: Path, mode: str,
+) -> None:
+    calls = 0
+
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        nonlocal calls
+        calls += 1
+        if "threadId" not in json.loads(input_text or "{}")["variables"]:
+            return review_threads_response([
+                review_thread_node("PRRT_1", [1], total=3, has_next=True, cursor="next"),
+            ])
+        return http_response(200, {
+            "data": {"node": {"comments": {
+                "totalCount": 3,
+                "nodes": [{"databaseId": 2}],
+                "pageInfo": {"hasNextPage": True, "endCursor": "next"},
+            }}},
+            "errors": [{"message": "partial failure"}] if mode == "partial_data" else [],
+        })
+
+    _store, client = make_client(tmp_path, default_handler(), graphql_handler=graphql_handler)
+    result = review_threads_module.read_review_threads(client, owner="acme", name="demo", number=10)
+    assert calls == 2
+    assert result.section["status"] == "partial"
+    assert result.section["items"][0]["comment_ids"] == [1, 2]
+    reason = (
+        "review_threads_comments_cursor_repeated"
+        if mode == "repeated_cursor" else "review_threads_comments_graphql_errors"
+    )
+    assert reason in result.section["truncation_reason"]
+
+
+def test_review_thread_missing_nodes_is_unavailable(tmp_path: Path) -> None:
+    def graphql_handler(_input_text: str | None) -> CommandResult:
+        return http_response(200, {"data": {"repository": {"pullRequest": {
+            "reviewThreads": {
+                "totalCount": 0,
+                "nodes": None,
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            },
+        }}}})
+
+    _store, client = make_client(tmp_path, default_handler(), graphql_handler=graphql_handler)
+    result = review_threads_module.read_review_threads(client, owner="acme", name="demo", number=10)
+    assert result.section["status"] == "unavailable"
+    assert "review_threads_nodes_invalid" in result.section["truncation_reason"]
+
+
+@pytest.mark.parametrize("invalid_page", ["initial", "continuation"])
+def test_review_thread_invalid_comments_remain_partial_after_pagination(
+    tmp_path: Path, invalid_page: str,
+) -> None:
+    def graphql_handler(input_text: str | None) -> CommandResult:
+        if "threadId" not in json.loads(input_text or "{}")["variables"]:
+            node = review_thread_node("PRRT_1", [1], total=2, has_next=True, cursor="next")
+            if invalid_page == "initial":
+                node["comments"]["nodes"].append(None)
+            return review_threads_response([node])
+        nodes = [{"databaseId": 2}]
+        if invalid_page == "continuation":
+            nodes.append({"databaseId": "invalid"})
+        return http_response(200, {"data": {"node": {"comments": {
+            "totalCount": 2,
+            "nodes": nodes,
+            "pageInfo": {"hasNextPage": False, "endCursor": None},
+        }}}})
+
+    _store, client = make_client(tmp_path, default_handler(), graphql_handler=graphql_handler)
+    result = review_threads_module.read_review_threads(client, owner="acme", name="demo", number=10)
+    assert result.section["status"] == "partial"
+    assert result.section["items"][0]["comment_ids"] == [1, 2]
+    assert result.section["items"][0]["comments_truncated"] is True
+    assert "review_threads_comments_nodes_invalid" in result.section["truncation_reason"]
+
+
 def test_review_threads_short_thread_does_not_request_comment_pages(
     tmp_path: Path,
 ) -> None:

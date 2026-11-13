@@ -48,7 +48,7 @@ def load_envelope(path: Path) -> dict[str, Any]:
     """Read and validate one import envelope from disk."""
     try:
         document = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise UsageError(
             f"无法读取来源 envelope：{path}",
             source="import_source.read",

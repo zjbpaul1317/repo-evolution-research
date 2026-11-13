@@ -15,7 +15,7 @@ from .. import SCHEMA_VERSION
 from ..errors import GitHubError
 from ..models import canonical_json, validate_document
 from ..store import SnapshotStore
-from .base import CollectContext
+from .base import FATAL_ERRORS, CollectContext
 from .status import derive_detail_status, derive_discussion_limitations
 from .texts import text_ref
 from .values import as_optional_int, as_optional_str, get_in, iso_or_none
@@ -46,6 +46,7 @@ class _Comment:
     replies_truncated: bool
     replies_page: dict[str, Any] | None = None
     duplicates: int = 0
+    replies_invalid: bool = False
 
 
 _DETAIL_QUERY = """
@@ -368,6 +369,7 @@ def _fetch_comments(
     reason: str | None = None
     duplicates = 0
     seen_comments: set[str] = set()
+    seen_cursors: set[str] = set()
     while True:
         variables: dict[str, Any] = {
             "owner": owner,
@@ -376,7 +378,16 @@ def _fetch_comments(
         }
         if cursor is not None:
             variables["cursor"] = cursor
-        result = context.client.graphql(_DETAIL_QUERY, variables=variables, page=page)
+        try:
+            result = context.client.graphql(_DETAIL_QUERY, variables=variables, page=page)
+        except FATAL_ERRORS:
+            raise
+        except GitHubError:
+            if not detail:
+                raise
+            truncated = True
+            reason = "comments_unavailable"
+            break
         pages += 1
         if result.errors:
             errors = True
@@ -407,7 +418,9 @@ def _fetch_comments(
         if total_known is None:
             total_known = _optional_count(connection.get("totalCount"))
         nodes = connection.get("nodes")
-        if isinstance(nodes, list):
+        if not isinstance(nodes, list):
+            errors = True
+        else:
             for node in nodes:
                 if not isinstance(node, Mapping):
                     errors = True
@@ -431,10 +444,15 @@ def _fetch_comments(
             truncated = True
             reason = "pagination_incomplete"
             break
+        if cursor in seen_cursors:
+            truncated = True
+            reason = "pagination_cursor_repeated"
+            break
         if page >= MAX_COMMENT_PAGES:
             truncated = True
             reason = "comments_page_limit"
             break
+        seen_cursors.add(cursor)
         page += 1
     if total_known is not None and len(comments) < total_known:
         truncated = True
@@ -468,13 +486,19 @@ def _fetch_reply_continuations(
     duplicates = 0
     reasons: list[str] = []
     for comment in comments:
+        comment_id = comment.item["id"]
         replies_conn = comment.replies_page
         if not isinstance(replies_conn, Mapping):
+            reasons.append(f"replies_connection_missing:{comment_id}")
             continue
+        total_known = _optional_count(replies_conn.get("totalCount"))
+        if comment.replies_invalid:
+            reasons.append(f"replies_nodes_invalid:{comment_id}")
         page_info = replies_conn.get("pageInfo")
         if not isinstance(page_info, Mapping) or not page_info.get("hasNextPage"):
+            if total_known is not None and total_known > len(comment.item["replies"]):
+                reasons.append(f"replies_total_mismatch:{comment_id}")
             continue
-        comment_id = comment.item["id"]
         seen_replies = {
             str(reply["id"])
             for reply in comment.item["replies"]
@@ -482,7 +506,8 @@ def _fetch_reply_continuations(
         }
         cursor = page_info.get("endCursor")
         page = 1
-        truncated_here = False
+        truncated_here = comment.replies_invalid
+        seen_cursors: set[str] = set()
         while True:
             if used >= MAX_REPLY_CONTINUATIONS:
                 reasons.append(f"replies_continuation_limit:{comment_id}")
@@ -492,17 +517,39 @@ def _fetch_reply_continuations(
                 reasons.append(f"replies_pagination_incomplete:{comment_id}")
                 truncated_here = True
                 break
-            result = context.client.graphql(
-                _REPLIES_QUERY,
-                variables={"commentId": comment_id, "cursor": cursor},
-                page=page,
-            )
-            pages += 1
+            if cursor in seen_cursors:
+                reasons.append(f"replies_cursor_repeated:{comment_id}")
+                truncated_here = True
+                break
+            seen_cursors.add(cursor)
             used += 1
+            try:
+                result = context.client.graphql(
+                    _REPLIES_QUERY,
+                    variables={"commentId": comment_id, "cursor": cursor},
+                    page=page,
+                )
+            except FATAL_ERRORS:
+                raise
+            except GitHubError:
+                reasons.append(f"replies_unavailable:{comment_id}")
+                truncated_here = True
+                break
+            pages += 1
             connection = get_in(result.data, "node", "replies")
             if isinstance(connection, Mapping):
-                for node in connection.get("nodes") or []:
+                total = _optional_count(connection.get("totalCount"))
+                if total is not None:
+                    total_known = total
+                nodes = connection.get("nodes")
+                if not isinstance(nodes, list):
+                    nodes = []
+                    truncated_here = True
+                    reasons.append(f"replies_nodes_invalid:{comment_id}")
+                for node in nodes:
                     if not isinstance(node, Mapping):
+                        reasons.append(f"replies_nodes_invalid:{comment_id}")
+                        truncated_here = True
                         continue
                     reply = _reply_item(context.store, node)
                     if reply is not None:
@@ -512,6 +559,9 @@ def _fetch_reply_continuations(
                             continue
                         seen_replies.add(identifier)
                         comment.item["replies"].append(reply)
+                    else:
+                        reasons.append(f"replies_nodes_invalid:{comment_id}")
+                        truncated_here = True
             if result.errors:
                 reasons.append(f"replies_graphql_errors:{comment_id}")
                 truncated_here = True
@@ -529,6 +579,9 @@ def _fetch_reply_continuations(
                 reasons.append(f"replies_page_limit:{comment_id}")
                 truncated_here = True
                 break
+        if total_known is not None and total_known > len(seen_replies):
+            reasons.append(f"replies_total_mismatch:{comment_id}")
+            truncated_here = True
         if truncated_here:
             comment.replies_truncated = True
             comment.item["replies_status"] = "partial"
@@ -558,8 +611,13 @@ def _comment_item(
     duplicates = 0
     replies_status = "complete"
     replies_truncated = False
+    replies_invalid = False
     if isinstance(replies, Mapping):
-        for reply in replies.get("nodes") or []:
+        nodes = replies.get("nodes")
+        if not isinstance(nodes, list):
+            nodes = []
+            replies_invalid = True
+        for reply in nodes:
             if isinstance(reply, Mapping):
                 parsed = _reply_item(store, reply)
                 if parsed is not None:
@@ -570,8 +628,13 @@ def _comment_item(
                     seen_replies.add(reply_id)
                     reply_items.append(parsed)
                 else:
-                    replies_status = "partial"
-                    replies_truncated = True
+                    replies_invalid = True
+            else:
+                replies_invalid = True
+        total = _optional_count(replies.get("totalCount"))
+        if total is not None and total > len(reply_items):
+            replies_truncated = True
+        replies_truncated = replies_truncated or replies_invalid
         page_info = replies.get("pageInfo")
         if isinstance(page_info, Mapping) and page_info.get("hasNextPage"):
             replies_truncated = True
@@ -595,6 +658,7 @@ def _comment_item(
         replies_truncated=replies_truncated,
         replies_page=replies if isinstance(replies, Mapping) else None,
         duplicates=duplicates,
+        replies_invalid=replies_invalid,
     )
     if replies_truncated:
         item["replies_status"] = "partial"

@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### 修复
+
+- HTTP 响应只从开头解析状态和响应头，避免文档或 diff 正文中的 `HTTP/1.1 404` 等示例被误判为请求失败。支持前置的 informational 响应头；子进程以字节接收后显式 UTF-8 解码，保留正文中的 CRLF。
+- REST / GraphQL 分页发现重复 Link / cursor 时及时停止，按采集错误保留部分结果，避免循环消耗整轮请求预算。
+- Review Thread 外层列表遵循客户端页数上限；重复游标、后续页错误、嵌套评论请求失败与 GraphQL partial data 都保留已取得的线程和 comment ID，并明确标记部分采集。失败的评论后续请求也计入单 PR 的 20 次限额。
+- Discussion comments / replies 遇到重复游标时停止；回复数量不足 `totalCount` 或存在畸形节点时保持 `partial`，避免后续分页把已有缺口重置为 `complete`。
+- JSONL 去重索引在锁内核对文件身份、大小和修改时间；其他存储实例写入、替换、删除或同大小覆盖后重新加载，避免重复或漏写。写入后同步失效同一文件其他去重键的缓存。
+- JSON Pointer 按 RFC 6901 核验数组下标和 `~0` / `~1` 转义，拒绝负数、前导零、带符号/空白或非 ASCII 的数组下标，避免非法 locator 被误记为 verified；合法的对象键与空指针仍可读取。
+- URI 格式校验将畸形 IPv6 / netloc 的解析失败转为 schema 诊断；配置、来源 envelope、selection 与快照 JSON 的非法 UTF-8 保持各自的输入/产物错误类别。
+- 共享 REST section 遇到非对象条目保留可用内容并标记缺口；截断和总数不匹配即使未配置自定义原因也保持 partial。窗口停止原因与畸形条目原因并存，避免 Release 采集把已有缺口恢复为 complete。
+- Review Thread 初始或后续评论页的畸形节点保持部分状态，即使后续页已补齐数量；外层 nodes 缺失也不能当成完整空列表。Discussion 后续非致命评论/回复请求失败保留已取内容，失败的回复请求计入后续请求限额。
+- audit 隔离 schema 无效的记录，继续输出诊断；非法 UTF-8 manifest、畸形 candidates 和不可读阅读包不会中断问题清单。validate 分流加载证据账本并记录具体 schema 失败，避免把畸形数据交给引用/状态推导。
+- 只读 SnapshotStore 拒绝写入 blob；blob API 的非法 hash 类型与读取错误返回结构化 StoreError。
+
+### 性能
+
+- JSONL 读取用文件末尾单字节检查替代整文件预读，减少解析时额外的内存副本。macOS / Python 3.13.3 的合成快照（20,000 条记录，10,788,890 字节）三轮读取中位数：`tracemalloc` 峰值由 28,364,795 降至 17,575,872 字节（约 38.0%）；耗时 0.134 秒与 0.136 秒，未观察到速度提升。该结果只覆盖本地合成读取，不代表真实 GitHub 端到端性能。
+- ledger/research 摘要、报告产物审计、已有 blob 核对和 verify_blob 使用流式 SHA-256。新增 `scripts/benchmark_hashing.py`：macOS arm64 / Python 3.13.3，32 MiB 文件、5 轮、预热缓存，Python 分配峰值中位数从 33,559,442 B 降到 267,945 B（约 99.2%），耗时中位数从 17.20 ms 降到 15.52 ms；摘要一致性通过。该结果只覆盖本地文件哈希，不代表端到端性能。
+
+### 开发检查
+
+- lint 与编译检查覆盖 `evals/*.py` 和维护脚本，保留对本地 `evals/results/` 的排除；中英文 README 与维护指南补充性能对比命令和测量边界。
+
+### 兼容性
+
+- 工具版本仍为 `0.2.9`，快照 schema 仍为 `1.3`。新增的诊断原因沿用现有字符串字段，无新字段或枚举，不需要迁移已有 run；已有证据与 blob 不会被批量重写。
+- 非法 JSON Pointer 曾被旧工具核验通过的证据，在本次重新 validate/audit 时会报告定位失败；应修正 locator，不能依赖旧 verification 标记绕过核验。
+
+### 验证
+
+- 2026-11-13，基于 `0a1dd41` 的工作区改动，本机 macOS / Python 3.13.3：`pytest -q` 944 passed（基线 917）；生成资产一致性、lint（含 Ruff）和 `git diff --check` 通过。
+- 新增 27 个回归与边界用例，覆盖响应正文保留、分页循环/限额/partial data、Discussion 回复完整性与存储索引失效。完整离线工作流仍通过；本轮未运行新的真实 GitHub 采集或 Linux 验证。
+- 同日继续整体优化，在上述 944 测试工作区上新增 48 个回归与边界用例；最终 `pytest -q` 为 992 passed（18.65 秒），生成资产一致性、扩展后的 lint 和 `git diff --check` 均通过。新增覆盖 RFC 6901、畸形 URI/UTF-8、只读 blob、损坏快照审计、REST section 缺口、GraphQL 内容保留以及哈希契约/同大小篡改；验证环境仍为本机 macOS / Python 3.13.3。
+
 ## 0.2.9 - 2026-11-08
 
 ### 新增

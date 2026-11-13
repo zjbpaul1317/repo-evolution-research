@@ -183,6 +183,8 @@ PYTHON=python bash scripts/lint.sh
 
 CI 在 Linux 和 macOS、Python 3.11 和 3.13 上运行这些离线检查，无需仓库密钥或实时 GitHub API。当前本地验证结果和 CI 运行结果应分别核实。
 
+本地 SHA-256 内存对比可运行 `python scripts/benchmark_hashing.py --size-mib 32 --repeats 5`，详见 [测量方法与边界](docs/maintaining.md#本地性能对比)。该测试只测文件哈希，不代表采集或报告生成的端到端性能。
+
 欢迎提交 bug、研究质量问题、来源采集改进和文档修正。请先阅读 [贡献指南](CONTRIBUTING.md)、[采集器开发契约](docs/collector-authoring.md) 和 [安全说明](SECURITY.md)。维护与发布建议见 [维护指南](docs/maintaining.md)。
 
 ## 许可证与来源

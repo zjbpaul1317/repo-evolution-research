@@ -138,3 +138,89 @@ def test_audit_explains_revalidation_after_inputs_change(tmp_path, capsys) -> No
                for p in result["result"]["attention_required"])
     assert any("重新 validate" in step for step in result["result"]["recovery"])
     assert _snapshot(store.run_dir) == before
+
+
+@pytest.mark.parametrize(
+    ("stream", "field", "value"),
+    [
+        ("entities", "id", []),
+        ("evidence", "blob_sha256", None),
+        ("evidence", "locator", []),
+        ("relations", "evidence_ids", 7),
+    ],
+)
+def test_audit_reports_malformed_records_and_continues(
+    tmp_path, capsys, stream, field, value,
+) -> None:
+    store = seed_run(tmp_path)
+    records = store.read_jsonl(f"normalized/{stream}.jsonl")
+    if stream == "relations":
+        fixture = Path(__file__).parent / "fixtures/example/relation.sample.json"
+        records = [json.loads(fixture.read_text(encoding="utf-8"))]
+    records[0][field] = value
+    store.write_bytes(
+        f"normalized/{stream}.jsonl",
+        "".join(json.dumps(item) + "\n" for item in records).encode(),
+    )
+    before = _snapshot(store.run_dir)
+
+    code, result = _audit(store, capsys)
+
+    assert code == 6
+    report = result["result"]
+    assert report["status"] == "attention_required"
+    assert report["integrity"]["schema_ok"] is False
+    assert any(p["problem"] == "schema_error" for p in report["attention_required"])
+    assert _snapshot(store.run_dir) == before
+
+
+def test_audit_reports_invalid_utf8_manifest(tmp_path, capsys) -> None:
+    store = seed_run(tmp_path)
+    store.write_bytes("manifest.json", b"\xff")
+    before = _snapshot(store.run_dir)
+
+    code, result = _audit(store, capsys)
+
+    assert code == 6
+    assert result["result"]["status"] == "attention_required"
+    assert any(p["problem"] == "invalid_manifest"
+               for p in result["result"]["attention_required"])
+    assert _snapshot(store.run_dir) == before
+
+
+def test_read_only_store_refuses_blob_creation(tmp_path) -> None:
+    store = seed_run(tmp_path)
+    read_only = SnapshotStore(store.run_dir, read_only=True)
+    before = _snapshot(store.run_dir)
+    with pytest.raises(StoreError):
+        read_only.save_blob(b"must stay read-only")
+    assert _snapshot(store.run_dir) == before
+
+
+def test_audit_continues_when_candidates_is_not_an_object(tmp_path, capsys) -> None:
+    store = seed_run(tmp_path)
+    prepare(store)
+    store.write_json("analysis/candidates.json", [1])
+    before = _snapshot(store.run_dir)
+
+    code, result = _audit(store, capsys)
+
+    assert code == 6
+    assert any(p["problem"] == "invalid_candidates"
+               for p in result["result"]["attention_required"])
+    assert _snapshot(store.run_dir) == before
+
+
+def test_audit_reports_invalid_utf8_reading_pack(tmp_path, capsys) -> None:
+    store = seed_run(tmp_path)
+    prepare(store)
+    pack = store.read_json("analysis/pack-index.json")["packs"][0]
+    store.write_bytes(pack["path"], b"\xff")
+    before = _snapshot(store.run_dir)
+
+    code, result = _audit(store, capsys)
+
+    assert code == 6
+    assert any(p["problem"] == "unreadable_pack_file" and p["path"] == pack["path"]
+               for p in result["result"]["attention_required"])
+    assert _snapshot(store.run_dir) == before

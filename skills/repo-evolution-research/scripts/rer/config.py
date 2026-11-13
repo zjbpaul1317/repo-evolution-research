@@ -463,7 +463,7 @@ def read_resolved_config(path: Path, *, artifact: bool = False) -> dict[str, Any
     try:
         try:
             document = json.loads(Path(path).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise UsageError(
                 f"无法读取配置：{path}",
                 source="config.read",

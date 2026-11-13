@@ -410,6 +410,32 @@ def test_graphql_200_with_errors_is_partial_not_fatal(tmp_path: Path) -> None:
     assert result.errors[0]["message"] == "partial failure"
 
 
+@pytest.mark.parametrize("transport", ["rest", "graphql"])
+def test_pagination_stops_repeated_targets_before_budget_exhaustion(
+    tmp_path: Path, transport: str,
+) -> None:
+    def runner(argv, input_text):
+        if transport == "rest":
+            return http_response(
+                200, [{"id": 1}],
+                {"Link": '<https://api.github.com/repos/o/r/labels?page=2>; rel="next"'},
+            )
+        return http_response(200, {"data": {"items": {
+            "nodes": [{"id": 1}],
+            "pageInfo": {"hasNextPage": True, "endCursor": "same-cursor"},
+        }}})
+
+    client, store, _ = make_client(tmp_path, runner)
+    pages = (
+        client.iter_rest_pages("repos/o/r/labels")
+        if transport == "rest"
+        else client.iter_graphql_pages("query {}", connection_path=("items",))
+    )
+    with pytest.raises(GitHubError, match="重复"):
+        list(pages)
+    assert len(store.read_jsonl("requests.jsonl")) == 2
+
+
 @pytest.mark.parametrize(
     ("status", "headers", "body", "error_class"),
     [
@@ -620,6 +646,38 @@ def test_parse_include_output_handles_status_and_body() -> None:
 
 
 @pytest.mark.parametrize(
+    "payload",
+    [
+        "Protocol example:\nHTTP/1.1 404 Not Found\nX-Example: yes\n\nexample body",
+        "HTTP/1.1 500 Internal Server Error\n\nThis is documentation.",
+        "first\r\nsecond\r\n",
+    ],
+)
+def test_rest_text_preserves_body_and_audit_blob(tmp_path: Path, payload: str) -> None:
+    def runner(argv, input_text):
+        return CommandResult(0, "HTTP/2.0 200 OK\r\nX-Test: yes\r\n\r\n" + payload)
+
+    client, store, _ = make_client(tmp_path, runner)
+    assert client.rest_text("repos/o/r/readme") == payload
+    request = store.read_jsonl("requests.jsonl")[0]
+    assert request["status"] == 200
+    assert store.read_blob(request["blob_sha256"]) == payload.encode("utf-8")
+
+
+def test_parse_include_output_skips_informational_headers() -> None:
+    status, headers, body = parse_include_output(
+        "HTTP/1.1 100 Continue\r\n\r\n"
+        "HTTP/2.0 200 OK\r\nX-Test: final\r\n\r\nbody\r\n"
+    )
+    assert (status, headers, body) == (200, {"x-test": "final"}, "body\r\n")
+
+
+def test_parse_include_output_requires_leading_status() -> None:
+    payload = "Transport failed\nHTTP/1.1 200 is mentioned in the error\n\ntext"
+    assert parse_include_output(payload) == (None, {}, payload)
+
+
+@pytest.mark.parametrize(
     "next_url",
     [
         "http://api.github.com/repos/o/r/labels?page=2",
@@ -760,6 +818,15 @@ def test_default_runner_decodes_utf8() -> None:
     result = default_runner([sys.executable, "-c", "print('中文')"], None)
     assert result.returncode == 0
     assert result.stdout.strip() == "中文"
+
+
+def test_default_runner_preserves_newlines_and_encodes_input() -> None:
+    result = default_runner([
+        sys.executable, "-c",
+        "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())",
+    ], "HTTP/2.0 200 OK\r\n\r\n正文\r\n")
+    assert result.returncode == 0
+    assert result.stdout == "HTTP/2.0 200 OK\r\n\r\n正文\r\n"
 
 
 def test_initial_runtime_is_treated_as_seconds(tmp_path: Path) -> None:
