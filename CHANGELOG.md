@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### 改进
+
+- 完整 collect 现在逐渠道向 stderr 输出 coverage 状态、条目/预期数、页数、已用请求、响应字节和耗时；失败时补充结构化错误码及已消耗预算。stdout JSON 契约保持不变。
+- 默认 GitHub 子进程使用 selector 分段读取 stdout，将捕获的子进程输出限制在单响应上限加 64 KiB HTTP 头余量，并在超限时终止子进程；stdout 以外的响应解析仍会产生有界的正文副本。请求超时取 120 秒与 run 剩余时长中的较小值；stderr 仅保留 64 KiB 诊断并继续排空管道。
+
+### 验证
+
+- 2026-11-14，macOS arm64 / Python 3.13.3：公开 `vllm-project/router` 14 天窗口真实采集、强制重采和 selection 深读均无阻塞 coverage；最终 104 次请求、10,902,865 字节、4 个深读实体。最终 audit 核验 1,535 条引文、109 条关系、419 个文本 blob，通过。详见 [`real workflow acceptance`](docs/acceptance/2026-11-14-real-workflow.md)。
+- 真实采集发生在进度输出与有界子进程 runner 修改之前；新版 runner 单独完成一条公开 GitHub API 请求冒烟。完整离线回归、runner 限流/超时和 CLI 进度测试在修改后运行。
+
 ### 修复
 
 - 仓库 URL 的畸形 authority / 端口返回 usage_error（exit 2），拒绝内部控制字符与空 userinfo，避免 URL 解析器静默移除制表符后误接收地址。畸形分页 URL 返回结构化 GitHubError；错误诊断不回显无法安全解析的凭据。
