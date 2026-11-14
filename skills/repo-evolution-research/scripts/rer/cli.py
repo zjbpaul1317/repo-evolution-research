@@ -403,10 +403,21 @@ def command_collect(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]
     def collect_usage() -> dict[str, Any]:
         return _merge_usage(initial_budget, client.usage_snapshot())
 
+    def report_progress(message: str) -> None:
+        usage = client.usage_snapshot()
+        elapsed = int(usage["runtime_seconds"])
+        print(
+            f"progress: {message} requests={usage['requests']} "
+            f"bytes={usage['total_bytes']} elapsed={elapsed}s",
+            file=sys.stderr,
+            flush=True,
+        )
+
     progress = CollectProgress(
         store,
         config["config_hash"],
         usage_provider=collect_usage,
+        event_callback=report_progress,
     )
     started_at = to_iso_z(datetime.now(UTC))
     manifest["state"] = "collecting"
@@ -477,6 +488,7 @@ def command_collect(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]
         code = getattr(exc, "code", type(exc).__name__)
         exit_code = getattr(exc, "exit_code", EXIT_INTERNAL)
         usage = client.usage_snapshot()
+        report_progress(f"stopped code={code}")
         prior_collected = previous_manifest["stages"].get("collect") in (
             "complete",
             "partial",

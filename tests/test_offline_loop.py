@@ -290,3 +290,15 @@ def test_offline_loop_is_deterministic(tmp_path: Path, monkeypatch) -> None:
         GOLDEN.parent.mkdir(parents=True, exist_ok=True)
         GOLDEN.write_text(first_report, encoding="utf-8")
     assert first_report == GOLDEN.read_text(encoding="utf-8")
+
+
+def test_collect_progress_reports_channel_and_live_budget(
+    tmp_path: Path, monkeypatch, capsys,
+) -> None:
+    run_loop(tmp_path / "progress", monkeypatch)
+    stderr = capsys.readouterr().err
+    assert "progress: channel=activity_prs" in stderr
+    assert "status=complete" in stderr
+    assert "requests=" in stderr
+    assert "bytes=" in stderr
+    assert "elapsed=" in stderr

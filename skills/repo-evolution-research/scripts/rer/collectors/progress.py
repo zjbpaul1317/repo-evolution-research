@@ -148,6 +148,7 @@ class CollectProgress:
     store: SnapshotStore
     config_hash: str
     usage_provider: Callable[[], Mapping[str, Any]] | None = None
+    event_callback: Callable[[str], None] | None = None
     status: str = "in_progress"
     coverage: list[dict[str, Any]] = field(default_factory=list)
     cursors: dict[str, Any] = field(default_factory=dict)
@@ -161,6 +162,14 @@ class CollectProgress:
         channel = str(validated["channel"])
         self.channel_states[channel] = str(validated["coverage_status"])
         self.coverage = merge_coverage(self.coverage, [validated])
+        if self.event_callback is not None:
+            expected = validated.get("expected_count")
+            fetched = validated.get("fetched_count", 0)
+            progress = f"{fetched}/{expected}" if expected is not None else str(fetched)
+            self.event_callback(
+                f"channel={channel} status={validated['coverage_status']} "
+                f"items={progress} pages={validated.get('pages', 0)}"
+            )
         if flush:
             self.flush()
 
