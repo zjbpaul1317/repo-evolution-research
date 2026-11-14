@@ -7,6 +7,7 @@ import json
 import os
 import re
 import secrets
+import selectors
 import shutil
 import subprocess
 import time
@@ -57,6 +58,8 @@ class CommandResult:
     returncode: int
     stdout: str = ""
     stderr: str = ""
+    output_limit_exceeded: bool = False
+    output_bytes: int = 0
 
 
 @dataclass
@@ -98,27 +101,96 @@ class GraphQLPage:
     page: int
 
 
-def default_runner(argv: list[str], input_text: str | None) -> CommandResult:
+def default_runner(
+    argv: list[str],
+    input_text: str | None,
+    *,
+    max_output_bytes: int = 8 * 1024 * 1024 + 64 * 1024,
+    timeout: float = 120,
+) -> CommandResult:
+    """Run gh with bounded in-memory output and a hard wall-clock limit."""
     environment = dict(os.environ)
     environment["GH_HOST"] = "github.com"
+    stdout = bytearray()
+    stderr = bytearray()
+    total_output = 0
+    exceeded = False
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             argv,
-            input=input_text.encode("utf-8") if input_text is not None else None,
-            capture_output=True,
-            timeout=120,
-            check=False,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             shell=False,
             env=environment,
         )
+        if input_text is not None and process.stdin is not None:
+            process.stdin.write(input_text.encode("utf-8"))
+            process.stdin.close()
+        elif process.stdin is not None:
+            process.stdin.close()
+        started = time.monotonic()
+        selector = selectors.DefaultSelector()
+        assert process.stdout is not None and process.stderr is not None
+        selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+        selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+        while selector.get_map() or process.poll() is None:
+            remaining = timeout - (time.monotonic() - started)
+            if remaining <= 0:
+                process.kill()
+                process.wait()
+                selector.close()
+                process.stdout.close()
+                process.stderr.close()
+                return CommandResult(124, "", "gh api timed out", output_bytes=total_output)
+            if not selector.get_map():
+                time.sleep(min(0.02, remaining))
+                continue
+            events = selector.select(min(remaining, 0.1))
+            if not events and process.poll() is not None:
+                continue
+            for key, _ in events:
+                chunk = os.read(key.fd, 64 * 1024)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    key.fileobj.close()
+                    continue
+                if key.data == "stdout":
+                    total_output += len(chunk)
+                    remaining_bytes = max_output_bytes - len(stdout)
+                    if remaining_bytes > 0:
+                        stdout.extend(chunk[:remaining_bytes])
+                    if total_output > max_output_bytes:
+                        exceeded = True
+                        process.kill()
+                        process.wait()
+                        selector.close()
+                        process.stdout.close()
+                        process.stderr.close()
+                        return CommandResult(
+                            process.returncode or 0,
+                            stdout.decode("utf-8", errors="replace"),
+                            stderr.decode("utf-8", errors="replace"),
+                            output_limit_exceeded=True,
+                            output_bytes=total_output,
+                        )
+                elif len(stderr) < 64 * 1024:
+                    stderr.extend(chunk[: 64 * 1024 - len(stderr)])
+        returncode = process.wait()
+        selector.close()
+    except (BrokenPipeError, OSError) as exc:
+        if "process" in locals() and process.poll() is None:
+            process.kill()
+            process.wait()
+        return CommandResult(127, "", f"{type(exc).__name__}: {exc}")
     except subprocess.TimeoutExpired:
         return CommandResult(124, "", "gh api timed out")
-    except OSError as exc:
-        return CommandResult(127, "", f"{type(exc).__name__}: {exc}")
     return CommandResult(
-        completed.returncode,
-        completed.stdout.decode("utf-8", errors="replace"),
-        completed.stderr.decode("utf-8", errors="replace"),
+        returncode,
+        stdout.decode("utf-8", errors="replace"),
+        stderr.decode("utf-8", errors="replace"),
+        output_limit_exceeded=exceeded,
+        output_bytes=total_output,
     )
 
 
@@ -801,13 +873,25 @@ class GitHubClient:
             self._preflight()
             request_id = self._next_request_id()
             self.usage["requests"] += 1
-            result = self.runner(argv, input_text)
+            max_response_bytes = int(self.budget.get("max_response_bytes", 8 * 1024 * 1024))
+            if self.runner is default_runner:
+                result = default_runner(
+                    argv,
+                    input_text,
+                    max_output_bytes=max_response_bytes + 64 * 1024,
+                    timeout=self._request_timeout(),
+                )
+            else:
+                result = self.runner(argv, input_text)
             status, headers, body = parse_include_output(result.stdout)
             if status is None:
                 body = body or result.stderr
 
             body_bytes = body.encode("utf-8")
             response_bytes = len(body_bytes)
+            if result.output_limit_exceeded:
+                header_bytes = max(0, len(result.stdout.encode("utf-8")) - len(body_bytes))
+                response_bytes = max(response_bytes, result.output_bytes - header_bytes)
             self.usage["response_bytes"] += response_bytes
             self.usage["total_bytes"] += response_bytes
             error_code = None
@@ -831,8 +915,8 @@ class GitHubClient:
             if transport == "graphql":
                 record_extra.update(self._graphql_audit(body))
 
-            max_response_bytes = int(self.budget.get("max_response_bytes", 8 * 1024 * 1024))
-            if response_bytes > max_response_bytes:
+            if result.output_limit_exceeded or response_bytes > max_response_bytes:
+                observed_bytes = max(response_bytes, max_response_bytes + 1)
                 self._record_request(
                     request_id=request_id,
                     logical_request_id=logical_request_id,
@@ -842,7 +926,7 @@ class GitHubClient:
                     page=page,
                     status=status,
                     headers=headers,
-                    response_bytes=response_bytes,
+                    response_bytes=observed_bytes,
                     blob_sha=None,
                     error_code="response_too_large",
                     retryable=False,
@@ -852,7 +936,7 @@ class GitHubClient:
                 raise BudgetExceededError(
                     f"单个响应超过 {max_response_bytes} 字节",
                     source="github.response",
-                    details={"endpoint": sanitize_url(endpoint), "bytes": response_bytes},
+                    details={"endpoint": sanitize_url(endpoint), "bytes": observed_bytes},
                 )
             if body_bytes:
                 blob_sha = self.store.save_blob(body_bytes)
@@ -976,6 +1060,13 @@ class GitHubClient:
                     "initial_bytes": int(self.initial_usage.get("total_bytes", 0) or 0),
                 },
             )
+
+    def _request_timeout(self) -> float:
+        """Keep each subprocess inside the run's remaining wall-clock budget."""
+        limit = int(self.budget.get("max_runtime_minutes", 35)) * 60
+        initial = float(self.initial_usage.get("runtime_seconds", 0) or 0)
+        remaining = limit - initial - (time.monotonic() - self.started_monotonic)
+        return max(0.001, min(120.0, remaining))
 
     def _total_bytes_used(self) -> int:
         initial = int(self.initial_usage.get("total_bytes", 0) or 0)

@@ -677,6 +677,25 @@ def test_response_size_budget_is_enforced(tmp_path: Path) -> None:
     assert records[0]["blob_sha256"] is None
 
 
+def test_stream_limit_records_observed_bytes_without_persisting_partial_blob(
+    tmp_path: Path,
+) -> None:
+    def runner(argv, input_text):
+        result = http_response(200, {"data": "x" * 100})
+        result.output_limit_exceeded = True
+        result.output_bytes = len(result.stdout.encode("utf-8")) + 4096
+        return result
+
+    budget = {**BUDGET, "max_response_bytes": 100}
+    client, store, _ = make_client(tmp_path, runner, budget)
+    with pytest.raises(BudgetExceededError):
+        client.rest("repos/o/r")
+    request = store.read_jsonl("requests.jsonl")[0]
+    assert request["error"] == "response_too_large"
+    assert request["response_bytes"] > 100
+    assert request["blob_sha256"] is None
+
+
 def test_request_ledger_redacts_url_tokens(tmp_path: Path) -> None:
     def runner(argv, input_text):
         return http_response(200, {"ok": True})
@@ -903,6 +922,34 @@ def test_default_runner_preserves_newlines_and_encodes_input() -> None:
     ], "HTTP/2.0 200 OK\r\n\r\n正文\r\n")
     assert result.returncode == 0
     assert result.stdout == "HTTP/2.0 200 OK\r\n\r\n正文\r\n"
+
+
+def test_default_runner_bounds_stdout_memory_and_terminates_child() -> None:
+    result = default_runner(
+        [sys.executable, "-c", "import os; os.write(1, b'x' * (1024 * 1024))"],
+        None,
+        max_output_bytes=4096,
+    )
+    assert result.output_limit_exceeded
+    assert result.output_bytes > 4096
+    assert len(result.stdout.encode("utf-8")) <= 4096
+
+
+def test_default_runner_timeout_kills_child() -> None:
+    result = default_runner(
+        [sys.executable, "-c", "import time; time.sleep(2)"], None, timeout=0.05,
+    )
+    assert result.returncode == 124
+    assert result.stderr == "gh api timed out"
+
+
+def test_default_runner_timeout_even_when_child_closes_pipes() -> None:
+    result = default_runner(
+        [sys.executable, "-c", "import os, time; os.close(1); os.close(2); time.sleep(2)"],
+        None,
+        timeout=0.05,
+    )
+    assert result.returncode == 124
 
 
 def test_initial_runtime_is_treated_as_seconds(tmp_path: Path) -> None:
