@@ -26,3 +26,7 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Frontend dependencies and build metadata
+node_modules/
+*.tsbuildinfo

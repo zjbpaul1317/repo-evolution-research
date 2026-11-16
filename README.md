@@ -47,6 +47,18 @@ An agent can request another reading round through `analysis/selection.json`. Cl
 
 **Validation checks references and state rules; it does not establish that an interpretation is semantically correct.** Human review remains necessary for consequential conclusions.
 
+## Interactive workbench
+
+The [Evolution frontend](frontend/README.md) provides a Chinese research dashboard with topic exploration, searchable evidence, capability states, Markdown reports, and a CLI command builder. It includes a clearly labeled fictional demo and can import local schema 1.2 / 1.3 research snapshots without uploading them.
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Open <http://127.0.0.1:5173> (Node.js 22.12+ or 20.19+ required). The frontend displays research artifacts; collection and Agent writing still use the CLI workflow below.
+
 ## Quick start
 
 ### Requirements
