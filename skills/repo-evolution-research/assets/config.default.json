@@ -1,0 +1,25 @@
+{
+  "mode": "standard",
+  "window": {
+    "timezone": "Asia/Shanghai"
+  },
+  "focus": [],
+  "compare_previous": false,
+  "include_discussions": true,
+  "include_docs": true,
+  "language": "zh-CN",
+  "output_root": ".repo-research",
+  "budget": {
+    "max_requests": 400,
+    "max_discovery_entities": 6000,
+    "max_deep_entities": 40,
+    "max_deep_prs": 22,
+    "agent_pr_reserve": 4,
+    "max_relation_hops": 2,
+    "max_external_entities": 20,
+    "max_response_bytes": 8388608,
+    "max_total_bytes": 157286400,
+    "max_runtime_minutes": 35,
+    "max_pack_chars": 100000
+  }
+}

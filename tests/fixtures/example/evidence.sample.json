@@ -1,0 +1,22 @@
+{
+  "id": "ev-001",
+  "entity_id": "github.com/example/demo/issue/40",
+  "source_url": "https://github.com/example/demo/issues/40",
+  "source_kind": "issue_body",
+  "observed_at": "2026-11-01T08:00:00Z",
+  "source_event_at": "2026-08-15T09:00:00Z",
+  "source_revision": null,
+  "blob_sha256": "fa23f160edd2b6af9b430545e03353754012b13de5c579ec9ed53f4da2d24579",
+  "locator": {
+    "format": "json_pointer",
+    "pointer": "/body",
+    "char_start": 0,
+    "char_end": 34,
+    "line_start": null,
+    "line_end": null,
+    "url_fragment": null
+  },
+  "text": "Introduce an explicit cleanup API.",
+  "completeness": "complete",
+  "verification": "verified"
+}

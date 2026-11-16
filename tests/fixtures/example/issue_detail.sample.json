@@ -1,0 +1,91 @@
+{
+  "schema_version": "1.3",
+  "observed_at": "2026-11-02T04:00:00Z",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "name": "demo"
+  },
+  "number": 42,
+  "url": "https://github.com/example/demo/issues/42",
+  "title": "RFC: explicit cache invalidation",
+  "author": "alice",
+  "state": "closed",
+  "state_reason": "completed",
+  "locked": false,
+  "created_at": "2026-05-01T00:00:00Z",
+  "updated_at": "2026-10-10T00:00:00Z",
+  "closed_at": "2026-10-10T00:00:00Z",
+  "closed_by": "bob",
+  "labels": [
+    "rfc",
+    "design"
+  ],
+  "comments_count": 1,
+  "reactions": 3,
+  "scope": "in_window",
+  "selection_reason": [
+    "discovered:updated_in_window",
+    "role_hint:rfc"
+  ],
+  "role_hints": [
+    "rfc",
+    "design"
+  ],
+  "body": {
+    "preview": "We should add an explicit cache invalidation API.",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bytes": 49,
+    "preview_truncated": false
+  },
+  "comments": {
+    "status": "complete",
+    "fetched": 1,
+    "total_known": 1,
+    "truncated": false,
+    "truncation_reason": null,
+    "items": [
+      {
+        "id": 1001,
+        "user": "carol",
+        "author_association": "MEMBER",
+        "created_at": "2026-09-01T00:00:00Z",
+        "updated_at": "2026-09-01T00:00:00Z",
+        "body": {
+          "preview": "Proposal accepted after discussion.",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "bytes": 35,
+          "preview_truncated": false
+        }
+      }
+    ]
+  },
+  "timeline": {
+    "status": "complete",
+    "fetched": 1,
+    "total_known": 1,
+    "truncated": false,
+    "truncation_reason": null,
+    "items": [
+      {
+        "event": "cross-referenced",
+        "id": 2001,
+        "actor": "dave",
+        "created_at": "2026-09-15T00:00:00Z",
+        "commit_id": null,
+        "source_number": 101,
+        "source_kind": "pull_request",
+        "label": null
+      }
+    ]
+  },
+  "coverage": {
+    "detail": "complete",
+    "body": "complete",
+    "comments": "complete",
+    "timeline": "complete"
+  },
+  "limitations": [
+    "observed_current_state"
+  ]
+}

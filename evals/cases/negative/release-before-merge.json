@@ -1,0 +1,6 @@
+{
+  "id": "release-before-merge",
+  "mutation": "release_before_merge",
+  "check": "validation_error",
+  "expected_code": "release_before_implementation"
+}

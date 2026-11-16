@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repo-evolution-research.local/schemas/entity.schema.json",
+  "title": "GitHub or documentation entity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "kind",
+    "url",
+    "title",
+    "observed_at",
+    "source_event_at",
+    "number",
+    "node_id",
+    "created_at",
+    "updated_at",
+    "roles",
+    "raw_state",
+    "normalized_state",
+    "evidence_ids",
+    "discovery_reasons",
+    "external"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*/(?!\\.{1,2}(?:/|$))[A-Za-z0-9][A-Za-z0-9._-]*/(?!\\.{1,2}(?:/|$))[A-Za-z0-9][A-Za-z0-9._-]*(?:/(?:pull|issue|discussion)/[0-9]+|/release/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._%~+-]+(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._%~+-]+)*|/comment/(?:issue|review)/[0-9]+|/review/[0-9]+|/[0-9a-f]{40}(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._%~+-]+(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._%~+-]+)*)?)?$",
+      "not": {
+        "pattern": "[\\r\\n]"
+      }
+    },
+    "kind": {
+      "enum": [
+        "repository",
+        "pull_request",
+        "issue",
+        "discussion",
+        "commit",
+        "release",
+        "doc",
+        "source_file",
+        "comment",
+        "review"
+      ]
+    },
+    "url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "title": {
+      "type": "string"
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_event_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "number": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "node_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "created_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "rfc",
+          "design",
+          "roadmap",
+          "implementation",
+          "bug",
+          "feature_request",
+          "enhancement",
+          "architecture",
+          "performance",
+          "compatibility",
+          "question",
+          "release_notes",
+          "documentation"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "raw_state": {
+      "type": "object"
+    },
+    "normalized_state": {
+      "type": "object"
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "discovery_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "external": {
+      "type": "boolean"
+    }
+  }
+}

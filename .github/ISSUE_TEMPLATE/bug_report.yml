@@ -1,0 +1,33 @@
+name: Bug report / 问题反馈
+description: Report a reproducible bug or an incorrect research result.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        中文或 English 均可。安全问题请阅读 SECURITY.md；不要上传密钥或私有来源。
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / 问题
+      description: Expected behavior, actual behavior, and impact.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction or source evidence / 复现或来源证据
+      description: Minimal commands or fixture; for research errors, provide the claim, source URL, and quote.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and scope / 环境与范围
+      description: Commit or tool version, OS, Python, command, window and mode; include relevant exit codes.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Additional diagnostics / 补充诊断
+      description: Redacted doctor output, coverage, or validation errors. Avoid full raw snapshots.

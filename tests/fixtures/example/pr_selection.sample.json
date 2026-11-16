@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.3",
+  "observed_at": "2026-11-02T04:00:00Z",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "name": "demo"
+  },
+  "activity_window": {
+    "start": "2026-08-04T00:00:00Z",
+    "end": "2026-11-02T00:00:00Z",
+    "timezone": "UTC"
+  },
+  "quota": {
+    "pr_quota": 22,
+    "merged_quota": 14,
+    "open_quota": 8,
+    "max_deep_entities": 40,
+    "deep_entities_used": 2
+  },
+  "candidates": [
+    {
+      "number": 101,
+      "entity_id": "github.com/example/demo/pull/101",
+      "bucket": "merged",
+      "score": 60,
+      "score_components": {
+        "merged": 10,
+        "merged_in_window": 40,
+        "recent_update": 10
+      },
+      "selection_reason": [
+        "merged",
+        "merged_in_window",
+        "recent_update"
+      ],
+      "selected": true,
+      "skipped_reason": null,
+      "status": "selected"
+    },
+    {
+      "number": 102,
+      "entity_id": "github.com/example/demo/pull/102",
+      "bucket": "open",
+      "score": 30,
+      "score_components": {
+        "focus_match": 30
+      },
+      "selection_reason": [
+        "focus_match:kv cache"
+      ],
+      "selected": false,
+      "skipped_reason": "quota_exhausted",
+      "status": "skipped_quota"
+    }
+  ],
+  "counts": {
+    "candidates": 2,
+    "selected": 1,
+    "merged_selected": 1,
+    "open_selected": 0,
+    "skipped_quota": 1,
+    "skipped_unchanged": 0,
+    "failed": 0,
+    "not_attempted": 0
+  },
+  "limitations": [
+    "observed_current_state",
+    "quota_limited_selection"
+  ]
+}

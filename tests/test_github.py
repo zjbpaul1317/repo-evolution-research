@@ -1,0 +1,1036 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from rer.errors import (
+    BudgetExceededError,
+    GitHubAuthError,
+    GitHubError,
+    GitHubNotFoundError,
+    GitHubRateLimitError,
+    GitHubUnavailableError,
+    UsageError,
+)
+from rer.github import (
+    CommandResult,
+    GitHubClient,
+    _prune_etag_cache,
+    default_runner,
+    parse_include_output,
+    probe_repository,
+    sanitize_url,
+    validate_headers,
+    validate_next_url,
+)
+from rer.store import create_run, new_run_id
+
+NOW = datetime(2026, 11, 1, 8, 0, 0, tzinfo=UTC)
+BUDGET = {
+    "max_requests": 50,
+    "max_discovery_entities": 100,
+    "max_deep_entities": 10,
+    "max_relation_hops": 2,
+    "max_external_entities": 5,
+    "max_response_bytes": 1024 * 1024,
+    "max_total_bytes": 8 * 1024 * 1024,
+    "max_runtime_minutes": 35,
+    "max_pack_chars": 100000,
+}
+
+
+@pytest.mark.parametrize("url", [
+    "https://user:private-secret@[broken/path",
+    "https://api.github.com:bad/repos/o/r",
+    "https://api.git\thub.com/repos/o/r",
+    "https://api.github.com/repos/o/r?page=2\n",
+])
+def test_invalid_pagination_url_is_a_structured_error(url: str) -> None:
+    with pytest.raises(GitHubError) as error:
+        validate_next_url(url)
+    assert "private-secret" not in json.dumps(error.value.to_dict())
+
+
+def test_sanitize_malformed_url_does_not_echo_credentials() -> None:
+    assert sanitize_url("https://user:private-secret@[broken/path") == "<invalid-url>"
+
+
+def http_response(
+    status: int,
+    body: Any,
+    headers: dict[str, str] | None = None,
+) -> CommandResult:
+    lines = [f"HTTP/2.0 {status} OK"]
+    for key, value in (headers or {}).items():
+        lines.append(f"{key}: {value}")
+    lines.append("")
+    lines.append(json.dumps(body))
+    return CommandResult(0 if status < 400 else 1, "\n".join(lines), "")
+
+
+def empty_http_response(
+    status: int,
+    headers: dict[str, str] | None = None,
+) -> CommandResult:
+    lines = [f"HTTP/2.0 {status} OK"]
+    for key, value in (headers or {}).items():
+        lines.append(f"{key}: {value}")
+    lines.append("")
+    return CommandResult(0, "\n".join(lines), "")
+
+
+def header_value(argv: list[str], name: str) -> str | None:
+    for index, token in enumerate(argv):
+        if token == "-H" and index + 1 < len(argv):
+            key, _, value = argv[index + 1].partition(":")
+            if key.lower() == name.lower():
+                return value.strip()
+    return None
+
+
+def make_client(
+    tmp_path: Path,
+    runner,
+    budget: dict[str, Any] | None = None,
+    initial_usage: dict[str, Any] | None = None,
+):
+    repository = {"host": "github.com", "owner": "o", "name": "r"}
+    store = create_run(tmp_path, repository, new_run_id(NOW))
+    sleeps: list[float] = []
+    client = GitHubClient(
+        store,
+        budget or BUDGET,
+        gh_path="gh",
+        runner=runner,
+        sleep=sleeps.append,
+        now=lambda: NOW,
+        initial_usage=initial_usage,
+        max_attempts=2,
+    )
+    return client, store, sleeps
+
+
+def test_rest_pagination_and_request_ledger(tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    def runner(argv, input_text):
+        endpoint = argv[argv.index("--include") + 1]
+        calls.append(endpoint)
+        if endpoint.endswith("/labels"):
+            return http_response(
+                200,
+                [{"name": "bug"}],
+                {"Link": '<https://api.github.com/repos/o/r/labels?page=2>; rel="next"'},
+            )
+        return http_response(200, [{"name": "rfc"}])
+
+    client, store, _ = make_client(tmp_path, runner)
+    pages = list(client.iter_rest_pages("repos/o/r/labels", params={"per_page": 100}))
+    assert [page.data for page in pages] == [[{"name": "bug"}], [{"name": "rfc"}]]
+    assert [page.page for page in pages] == [1, 2]
+    assert calls[0] == "repos/o/r/labels"
+    assert "page=2" in calls[1]
+
+    requests = store.read_jsonl("requests.jsonl")
+    assert len(requests) == 2
+    assert {record["transport"] for record in requests} == {"rest"}
+    assert all(record["status"] == 200 for record in requests)
+    assert len(store.read_jsonl("raw/index.jsonl")) == 2
+
+
+def test_rest_cached_revalidates_with_etag(tmp_path: Path) -> None:
+    seen_conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        seen_conditions.append(header_value(argv, "If-None-Match"))
+        if len(seen_conditions) == 1:
+            return http_response(200, {"value": 1}, {"ETag": '"v1"'})
+        return empty_http_response(304, {"ETag": '"v1"'})
+
+    client, store, _ = make_client(tmp_path, runner)
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    client.now = lambda: datetime(2026, 11, 1, 9, 0, 0, tzinfo=UTC)
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+
+    assert seen_conditions == [None, '"v1"']
+    requests = store.read_jsonl("requests.jsonl")
+    assert [record["status"] for record in requests] == [200, 304]
+    cache = store.read_json("cache/http-etag.json")
+    entry = next(iter(cache.values()))
+    assert entry["etag"] == '"v1"'
+    assert entry["fetched_at"] == "2026-11-01T08:00:00Z"
+    assert entry["validated_at"] == "2026-11-01T09:00:00Z"
+
+
+def test_rest_cached_refreshes_changed_etag(tmp_path: Path) -> None:
+    seen_conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        condition = header_value(argv, "If-None-Match")
+        seen_conditions.append(condition)
+        if condition is None:
+            return http_response(200, {"value": 1}, {"ETag": '"v1"'})
+        if condition == '"v1"':
+            return http_response(200, {"value": 2}, {"ETag": '"v2"'})
+        return empty_http_response(304, {"ETag": '"v2"'})
+
+    client, _store, _ = make_client(tmp_path, runner)
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    assert client.rest_cached("repos/o/r/value") == {"value": 2}
+    assert client.rest_cached("repos/o/r/value") == {"value": 2}
+    assert seen_conditions == [None, '"v1"', '"v2"']
+
+
+def test_rest_cached_without_etag_does_not_cache(tmp_path: Path) -> None:
+    seen_conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        seen_conditions.append(header_value(argv, "If-None-Match"))
+        return http_response(200, {"value": 1})
+
+    client, store, _ = make_client(tmp_path, runner)
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    assert seen_conditions == [None, None]
+    assert not store.secure_path("cache/http-etag.json").is_file()
+
+
+def test_rest_cached_missing_blob_falls_back_to_full_request(
+    tmp_path: Path,
+) -> None:
+    seen_conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        seen_conditions.append(header_value(argv, "If-None-Match"))
+        return http_response(200, {"value": 1}, {"ETag": '"v1"'})
+
+    client, store, _ = make_client(tmp_path, runner)
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    cache = store.read_json("cache/http-etag.json")
+    blob_sha = next(iter(cache.values()))["blob_sha256"]
+    store.remove_file(f"blobs/{blob_sha}")
+
+    assert client.rest_cached("repos/o/r/value") == {"value": 1}
+    assert seen_conditions == [None, None]
+
+
+def test_iter_rest_pages_revalidates_each_page_with_etag(tmp_path: Path) -> None:
+    conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        endpoint = argv[argv.index("--include") + 1]
+        condition = header_value(argv, "If-None-Match")
+        conditions.append(condition)
+        if endpoint.endswith("/labels"):
+            if condition is None:
+                return http_response(
+                    200,
+                    [{"name": "one"}],
+                    {
+                        "ETag": '"p1"',
+                        "Link": (
+                            '<https://api.github.com/repos/o/r/labels?page=2>;'
+                            ' rel="next"'
+                        ),
+                    },
+                )
+            return empty_http_response(304, {"ETag": '"p1"'})
+        if condition is None:
+            return http_response(200, [{"name": "two"}], {"ETag": '"p2"'})
+        return empty_http_response(304, {"ETag": '"p2"'})
+
+    client, store, _ = make_client(tmp_path, runner)
+    first = list(
+        client.iter_rest_pages("repos/o/r/labels", params={"per_page": 100})
+    )
+    second = list(
+        client.iter_rest_pages("repos/o/r/labels", params={"per_page": 100})
+    )
+
+    assert [page.data for page in first] == [[{"name": "one"}], [{"name": "two"}]]
+    assert [page.data for page in second] == [[{"name": "one"}], [{"name": "two"}]]
+    assert conditions == [None, None, '"p1"', '"p2"']
+    cache = store.read_json("cache/http-etag.json")
+    assert len(cache) == 2
+    page_one = next(entry for entry in cache.values() if entry["has_next"])
+    page_two = next(entry for entry in cache.values() if not entry["has_next"])
+    assert "page=2" in page_one["link"]
+    assert page_one["validated_at"]
+    assert page_two["link"] is None
+    assert page_two["validated_at"]
+
+
+def test_iter_rest_pages_304_without_cached_link_refetches(
+    tmp_path: Path,
+) -> None:
+    conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        endpoint = argv[argv.index("--include") + 1]
+        condition = header_value(argv, "If-None-Match")
+        conditions.append(condition)
+        if endpoint.endswith("/labels"):
+            if condition is None:
+                return http_response(
+                    200,
+                    [{"name": "one"}],
+                    {
+                        "ETag": '"p1"',
+                        "Link": (
+                            '<https://api.github.com/repos/o/r/labels?page=2>;'
+                            ' rel="next"'
+                        ),
+                    },
+                )
+            return empty_http_response(304, {"ETag": '"p1"'})
+        if condition is None:
+            return http_response(200, [{"name": "two"}], {"ETag": '"p2"'})
+        return empty_http_response(304, {"ETag": '"p2"'})
+
+    client, store, _ = make_client(tmp_path, runner)
+    list(client.iter_rest_pages("repos/o/r/labels", params={"per_page": 100}))
+    cache = store.read_json("cache/http-etag.json")
+    for entry in cache.values():
+        if entry.get("has_next"):
+            entry.pop("link", None)
+            entry.pop("has_next", None)
+    store.write_json("cache/http-etag.json", cache)
+
+    second = list(
+        client.iter_rest_pages("repos/o/r/labels", params={"per_page": 100})
+    )
+
+    assert [page.data for page in second] == [[{"name": "one"}], [{"name": "two"}]]
+    assert conditions == [None, None, '"p1"', None, '"p2"']
+
+
+def test_iter_rest_pages_changed_page_refetches(tmp_path: Path) -> None:
+    conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        condition = header_value(argv, "If-None-Match")
+        conditions.append(condition)
+        if condition is None:
+            return http_response(200, [{"value": 1}], {"ETag": '"p1"'})
+        if condition == '"p1"':
+            return http_response(200, [{"value": 2}], {"ETag": '"p2"'})
+        return empty_http_response(304, {"ETag": '"p2"'})
+
+    client, store, _ = make_client(tmp_path, runner)
+    first = list(client.iter_rest_pages("repos/o/r/items"))
+    second = list(client.iter_rest_pages("repos/o/r/items"))
+
+    assert [page.data for page in first] == [[{"value": 1}]]
+    assert [page.data for page in second] == [[{"value": 2}]]
+    assert conditions == [None, '"p1"']
+    cache = store.read_json("cache/http-etag.json")
+    entry = next(iter(cache.values()))
+    assert entry["etag"] == '"p2"'
+
+
+def test_iter_rest_pages_without_etag_does_not_cache(tmp_path: Path) -> None:
+    conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        conditions.append(header_value(argv, "If-None-Match"))
+        return http_response(200, [{"value": 1}])
+
+    client, store, _ = make_client(tmp_path, runner)
+    list(client.iter_rest_pages("repos/o/r/items"))
+    list(client.iter_rest_pages("repos/o/r/items"))
+
+    assert conditions == [None, None]
+    assert not store.secure_path("cache/http-etag.json").is_file()
+
+
+def test_iter_rest_pages_missing_blob_falls_back(tmp_path: Path) -> None:
+    conditions: list[str | None] = []
+
+    def runner(argv, input_text):
+        conditions.append(header_value(argv, "If-None-Match"))
+        return http_response(200, [{"value": 1}], {"ETag": '"p1"'})
+
+    client, store, _ = make_client(tmp_path, runner)
+    list(client.iter_rest_pages("repos/o/r/items"))
+    cache = store.read_json("cache/http-etag.json")
+    blob_sha = next(iter(cache.values()))["blob_sha256"]
+    store.remove_file(f"blobs/{blob_sha}")
+
+    list(client.iter_rest_pages("repos/o/r/items"))
+    assert conditions == [None, None]
+
+
+def test_prune_etag_cache_keeps_newest_entries() -> None:
+    cache = {
+        "old": {"validated_at": "2026-01-01T00:00:00Z"},
+        "mid": {"validated_at": "2026-02-01T00:00:00Z"},
+        "new": {"validated_at": "2026-03-01T00:00:00Z"},
+    }
+
+    assert set(_prune_etag_cache(cache, limit=2)) == {"mid", "new"}
+
+
+def test_graphql_pagination(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        assert argv[1:4] == ["api", "graphql", "--include"]
+        payload = json.loads(input_text)
+        cursor = payload["variables"].get("cursor")
+        nodes = [{"title": "one"}] if cursor is None else [{"title": "two"}]
+        return http_response(
+            200,
+            {
+                "data": {
+                    "repository": {
+                        "discussions": {
+                            "nodes": nodes,
+                            "pageInfo": {
+                                "hasNextPage": cursor is None,
+                                "endCursor": "next" if cursor is None else None,
+                            },
+                        }
+                    }
+                }
+            },
+        )
+
+    client, store, _ = make_client(tmp_path, runner)
+    pages = list(
+        client.iter_graphql_pages(
+            (
+                "query($cursor: String) { repository { discussions { "
+                "nodes { title } pageInfo { hasNextPage endCursor } } } }"
+            ),
+            variables={"owner": "o", "name": "r"},
+            connection_path=("repository", "discussions"),
+        )
+    )
+    assert [page.nodes for page in pages] == [[{"title": "one"}], [{"title": "two"}]]
+    assert len(store.read_jsonl("requests.jsonl")) == 2
+
+
+def test_graphql_200_with_errors_is_partial_not_fatal(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(
+            200,
+            {"data": {"repository": {}}, "errors": [{"message": "partial failure"}]},
+        )
+
+    client, _, _ = make_client(tmp_path, runner)
+    result = client.graphql("query { repository { name } }")
+    assert result.partial is True
+    assert result.errors[0]["message"] == "partial failure"
+
+
+@pytest.mark.parametrize("body", [None, [], 42, {}, {"data": None}, {"data": []}])
+def test_graphql_rejects_invalid_envelope(tmp_path: Path, body) -> None:
+    client, store, _ = make_client(tmp_path, lambda *_: http_response(200, body))
+    with pytest.raises(GitHubError, match="data / errors"):
+        client.graphql("query {}")
+    assert len(store.read_jsonl("requests.jsonl")) == 1
+
+
+@pytest.mark.parametrize("errors", ["failure", {}, [None, "failure", {"message": "denied"}]])
+def test_graphql_preserves_data_with_malformed_errors(tmp_path: Path, errors) -> None:
+    data = {"repository": {"name": "demo"}}
+    client, _, _ = make_client(
+        tmp_path, lambda *_: http_response(200, {"data": data, "errors": errors}),
+    )
+    result = client.graphql("query {}")
+    assert result.data == data
+    assert result.partial
+    assert all(isinstance(error, dict) for error in result.errors)
+
+
+@pytest.mark.parametrize("connection", [
+    None,
+    {},
+    {"nodes": 1, "pageInfo": {"hasNextPage": False}},
+    {"nodes": {"id": 1}, "pageInfo": {"hasNextPage": False}},
+    {"nodes": [{"id": 1}, None], "pageInfo": {"hasNextPage": False}},
+    {"nodes": [{"id": 1}]},
+    {"nodes": [{"id": 1}], "pageInfo": {"hasNextPage": "false"}},
+])
+def test_graphql_pages_preserve_valid_nodes_and_report_shape_errors(
+    tmp_path: Path, connection,
+) -> None:
+    client, _, _ = make_client(
+        tmp_path, lambda *_: http_response(200, {"data": {"items": connection}}),
+    )
+    pages = list(client.iter_graphql_pages("query {}", connection_path=("items",)))
+    assert len(pages) == 1
+    assert pages[0].errors
+    nodes = connection.get("nodes") if isinstance(connection, dict) else None
+    assert pages[0].nodes == (
+        [node for node in nodes if isinstance(node, dict)] if isinstance(nodes, list) else []
+    )
+
+
+def test_graphql_malformed_nodes_do_not_prevent_following_pages(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        cursor = json.loads(input_text)["variables"].get("cursor")
+        return http_response(200, {"data": {"items": {
+            "nodes": [None, {"id": 1}] if cursor is None else [{"id": 2}],
+            "pageInfo": {"hasNextPage": cursor is None, "endCursor": "next"},
+        }}})
+
+    client, _, _ = make_client(tmp_path, runner)
+    pages = list(client.iter_graphql_pages("query {}", connection_path=("items",)))
+    assert [page.nodes for page in pages] == [[{"id": 1}], [{"id": 2}]]
+    assert pages[0].errors
+    assert not pages[1].errors
+
+
+@pytest.mark.parametrize("transport", ["rest", "graphql"])
+def test_pagination_stops_repeated_targets_before_budget_exhaustion(
+    tmp_path: Path, transport: str,
+) -> None:
+    def runner(argv, input_text):
+        if transport == "rest":
+            return http_response(
+                200, [{"id": 1}],
+                {"Link": '<https://api.github.com/repos/o/r/labels?page=2>; rel="next"'},
+            )
+        return http_response(200, {"data": {"items": {
+            "nodes": [{"id": 1}],
+            "pageInfo": {"hasNextPage": True, "endCursor": "same-cursor"},
+        }}})
+
+    client, store, _ = make_client(tmp_path, runner)
+    pages = (
+        client.iter_rest_pages("repos/o/r/labels")
+        if transport == "rest"
+        else client.iter_graphql_pages("query {}", connection_path=("items",))
+    )
+    with pytest.raises(GitHubError, match="重复"):
+        list(pages)
+    assert len(store.read_jsonl("requests.jsonl")) == 2
+
+
+@pytest.mark.parametrize(
+    ("status", "headers", "body", "error_class"),
+    [
+        (403, {}, {"message": "Bad credentials"}, GitHubAuthError),
+        (404, {}, {"message": "Not Found"}, GitHubNotFoundError),
+        (500, {}, {"message": "server error"}, GitHubUnavailableError),
+    ],
+)
+def test_http_errors_are_classified(
+    tmp_path: Path,
+    status: int,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    error_class: type[Exception],
+) -> None:
+    def runner(argv, input_text):
+        return http_response(status, body, headers)
+
+    client, _, _ = make_client(tmp_path, runner)
+    with pytest.raises(error_class):
+        client.rest("repos/o/r")
+
+
+def test_rate_limit_retries_with_retry_after(tmp_path: Path) -> None:
+    calls = {"count": 0}
+
+    def runner(argv, input_text):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return http_response(429, {"message": "rate limit"}, {"Retry-After": "0"})
+        return http_response(200, {"ok": True})
+
+    client, store, sleeps = make_client(tmp_path, runner)
+    assert client.rest("repos/o/r") == {"ok": True}
+    assert sleeps == [0]
+    assert len(store.read_jsonl("requests.jsonl")) == 2
+
+
+def test_rate_limit_without_retry_budget_raises(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(429, {"message": "rate limit"}, {"Retry-After": "3600"})
+
+    client, _, _ = make_client(tmp_path, runner)
+    with pytest.raises(GitHubRateLimitError):
+        client.rest("repos/o/r")
+
+
+@pytest.mark.parametrize("body", [None, {"message": "slow down"}])
+def test_429_without_rate_limit_hints_is_still_rate_limited(
+    tmp_path: Path,
+    body: dict[str, Any] | None,
+) -> None:
+    calls = {"count": 0}
+
+    def runner(argv, input_text):
+        calls["count"] += 1
+        if body is None:
+            return CommandResult(1, "HTTP/2.0 429 Too Many Requests\n\n", "")
+        return http_response(429, body)
+
+    client, store, sleeps = make_client(tmp_path, runner)
+    with pytest.raises(GitHubRateLimitError):
+        client.rest("repos/o/r")
+    assert calls["count"] == 2
+    assert sleeps == [1]
+    assert all(
+        record["error"] == "rate_limited"
+        for record in store.read_jsonl("requests.jsonl")
+    )
+
+
+@pytest.mark.parametrize(
+    ("headers", "body"),
+    [
+        ({"x-ratelimit-remaining": "0"}, {}),
+        ({}, {"message": "You have exceeded a secondary rate limit"}),
+    ],
+)
+def test_403_secondary_rate_limit_is_classified(
+    tmp_path: Path,
+    headers: dict[str, str],
+    body: dict[str, Any],
+) -> None:
+    def runner(argv, input_text):
+        return http_response(403, body, headers)
+
+    client, _, _ = make_client(tmp_path, runner)
+    with pytest.raises(GitHubRateLimitError):
+        client.rest("repos/o/r")
+
+
+def test_pagination_limit_is_enforced(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(
+            200,
+            [{"name": "x"}],
+            {"Link": '<https://api.github.com/repos/o/r/labels?page=2>; rel="next"'},
+        )
+
+    client, _, _ = make_client(tmp_path, runner)
+    client.max_pages = 2
+    with pytest.raises(BudgetExceededError):
+        list(client.iter_rest_pages("repos/o/r/labels"))
+
+
+def test_transport_timeout_is_unavailable(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return CommandResult(124, "", "gh api timed out")
+
+    client, _, _ = make_client(tmp_path, runner)
+    with pytest.raises(GitHubUnavailableError):
+        client.rest("repos/o/r")
+
+
+def test_initial_usage_counts_toward_budget(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(200, {"ok": True})
+
+    budget = {**BUDGET, "max_requests": 2}
+    client, _, _ = make_client(
+        tmp_path,
+        runner,
+        budget,
+        initial_usage={"requests": 2},
+    )
+    with pytest.raises(BudgetExceededError):
+        client.rest("repos/o/r")
+
+
+def test_deep_entities_used_combines_initial_and_attempt(tmp_path: Path) -> None:
+    client, _, _ = make_client(
+        tmp_path,
+        lambda argv, input_text: http_response(200, {"ok": True}),
+        initial_usage={"deep_entities": 3},
+    )
+    client.usage["deep_entities"] = 2
+
+    assert client.deep_entities_used() == 5
+
+
+def test_request_budget_is_enforced(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(200, {"ok": True})
+
+    budget = {**BUDGET, "max_requests": 1}
+    client, store, _ = make_client(tmp_path, runner, budget)
+    client.rest("repos/o/r")
+    with pytest.raises(BudgetExceededError):
+        client.rest("repos/o/r")
+    assert len(store.read_jsonl("requests.jsonl")) == 1
+
+
+def test_response_size_budget_is_enforced(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(200, {"data": "x" * 100})
+
+    budget = {**BUDGET, "max_response_bytes": 10}
+    client, store, _ = make_client(tmp_path, runner, budget)
+    with pytest.raises(BudgetExceededError):
+        client.rest("repos/o/r")
+    records = store.read_jsonl("requests.jsonl")
+    assert records[0]["error"] == "response_too_large"
+    assert records[0]["blob_sha256"] is None
+
+
+def test_stream_limit_records_observed_bytes_without_persisting_partial_blob(
+    tmp_path: Path,
+) -> None:
+    def runner(argv, input_text):
+        result = http_response(200, {"data": "x" * 100})
+        result.output_limit_exceeded = True
+        result.output_bytes = len(result.stdout.encode("utf-8")) + 4096
+        return result
+
+    budget = {**BUDGET, "max_response_bytes": 100}
+    client, store, _ = make_client(tmp_path, runner, budget)
+    with pytest.raises(BudgetExceededError):
+        client.rest("repos/o/r")
+    request = store.read_jsonl("requests.jsonl")[0]
+    assert request["error"] == "response_too_large"
+    assert request["response_bytes"] > 100
+    assert request["blob_sha256"] is None
+
+
+def test_request_ledger_redacts_url_tokens(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(200, {"ok": True})
+
+    client, store, _ = make_client(tmp_path, runner)
+    client.rest("https://api.github.com/repos/o/r?token=secret")
+    record = store.read_jsonl("requests.jsonl")[0]
+    assert "secret" not in record["endpoint"]
+    assert "redacted" in record["endpoint"].lower()
+
+
+def test_sensitive_params_are_rejected(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(200, {"ok": True})
+
+    client, store, _ = make_client(tmp_path, runner)
+    with pytest.raises(UsageError):
+        client.rest("repos/o/r", params={"token": "secret"})
+    with pytest.raises(UsageError):
+        client.graphql(
+            "query($token: String) { viewer { login } }",
+            variables={"token": "secret"},
+        )
+    assert store.read_jsonl("requests.jsonl") == []
+
+
+def test_probe_repository_reports_access(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(200, {"default_branch": "main", "archived": False})
+
+    result = probe_repository("gh", "o", "r", runner=runner)
+    assert result["status"] == "ok"
+    assert result["default_branch"] == "main"
+
+
+def test_parse_include_output_handles_status_and_body() -> None:
+    status, headers, body = parse_include_output(
+        "HTTP/2.0 200 OK\nContent-Type: application/json\nX-Test: 1\n\n{\"ok\": true}"
+    )
+    assert status == 200
+    assert headers["x-test"] == "1"
+    assert json.loads(body) == {"ok": True}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "Protocol example:\nHTTP/1.1 404 Not Found\nX-Example: yes\n\nexample body",
+        "HTTP/1.1 500 Internal Server Error\n\nThis is documentation.",
+        "first\r\nsecond\r\n",
+    ],
+)
+def test_rest_text_preserves_body_and_audit_blob(tmp_path: Path, payload: str) -> None:
+    def runner(argv, input_text):
+        return CommandResult(0, "HTTP/2.0 200 OK\r\nX-Test: yes\r\n\r\n" + payload)
+
+    client, store, _ = make_client(tmp_path, runner)
+    assert client.rest_text("repos/o/r/readme") == payload
+    request = store.read_jsonl("requests.jsonl")[0]
+    assert request["status"] == 200
+    assert store.read_blob(request["blob_sha256"]) == payload.encode("utf-8")
+
+
+def test_parse_include_output_skips_informational_headers() -> None:
+    status, headers, body = parse_include_output(
+        "HTTP/1.1 100 Continue\r\n\r\n"
+        "HTTP/2.0 200 OK\r\nX-Test: final\r\n\r\nbody\r\n"
+    )
+    assert (status, headers, body) == (200, {"x-test": "final"}, "body\r\n")
+
+
+def test_parse_include_output_requires_leading_status() -> None:
+    payload = "Transport failed\nHTTP/1.1 200 is mentioned in the error\n\ntext"
+    assert parse_include_output(payload) == (None, {}, payload)
+
+
+@pytest.mark.parametrize(
+    "next_url",
+    [
+        "http://api.github.com/repos/o/r/labels?page=2",
+        "https://evil.example/repos/o/r/labels?page=2",
+        "https://user:pass@api.github.com/repos/o/r/labels?page=2",
+        "https://api.github.com/repos/o/r/labels?page=2#fragment",
+    ],
+)
+def test_unsafe_link_target_is_rejected(tmp_path: Path, next_url: str) -> None:
+    calls: list[str] = []
+
+    def runner(argv, input_text):
+        endpoint = argv[argv.index("--include") + 1]
+        calls.append(endpoint)
+        return http_response(
+            200,
+            [{"name": "x"}],
+            {"Link": f'<{next_url}>; rel="next"'},
+        )
+
+    client, _, _ = make_client(tmp_path, runner)
+    with pytest.raises(GitHubError):
+        list(client.iter_rest_pages("repos/o/r/labels"))
+    assert calls == ["repos/o/r/labels"]
+
+
+def test_sanitize_url_strips_userinfo_and_redacts_query() -> None:
+    cleaned = sanitize_url("https://user:pass@api.github.com/x?token=secret&page=2")
+    assert "user" not in cleaned
+    assert "pass" not in cleaned
+    assert "secret" not in cleaned
+    assert "page=2" in cleaned
+    assert cleaned.startswith("https://api.github.com/x?")
+
+
+def test_probe_repository_rejects_non_object_body() -> None:
+    def runner(argv, input_text):
+        return http_response(200, [])
+
+    result = probe_repository("gh", "o", "r", runner=runner)
+    assert result["status"] == "error"
+    assert "JSON 对象" in result["message"]
+
+
+def test_graphql_query_and_cost_are_audited(tmp_path: Path) -> None:
+    query = "query { viewer { login } }"
+
+    def runner(argv, input_text):
+        return http_response(
+            200,
+            {
+                "data": {
+                    "viewer": {"login": "x"},
+                    "rateLimit": {
+                        "cost": 2,
+                        "remaining": 9,
+                        "resetAt": "2026-11-01T09:00:00Z",
+                    },
+                }
+            },
+        )
+
+    client, store, _ = make_client(tmp_path, runner)
+    client.graphql(query, variables={"owner": "o", "name": "r"})
+    record = store.read_jsonl("requests.jsonl")[0]
+    digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
+    assert record["query_sha256"] == digest
+    assert record["query_blob_sha256"] == digest
+    assert store.read_blob(digest) == query.encode("utf-8")
+    assert record["graphql_cost"] == 2
+    assert record["graphql_remaining"] == 9
+    assert record["graphql_reset_at"] == "2026-11-01T09:00:00Z"
+    assert record["logical_request_id"]
+    index = store.read_jsonl("raw/index.jsonl")[0]
+    assert index["query_sha256"] == digest
+
+
+def test_graphql_retry_shares_logical_request_id(tmp_path: Path) -> None:
+    calls = {"count": 0}
+
+    def runner(argv, input_text):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return http_response(500, {"message": "boom"})
+        return http_response(200, {"data": {"viewer": {"login": "x"}}})
+
+    client, store, sleeps = make_client(tmp_path, runner)
+    client.graphql("query { viewer { login } }")
+    records = store.read_jsonl("requests.jsonl")
+    assert len(records) == 2
+    assert records[0]["logical_request_id"] == records[1]["logical_request_id"]
+    assert records[0]["request_id"] != records[1]["request_id"]
+    assert {record["attempt"] for record in records} == {1, 2}
+    assert sleeps == [1]
+
+
+def test_graphql_missing_cursor_is_an_error(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(
+            200,
+            {
+                "data": {
+                    "repository": {
+                        "discussions": {
+                            "nodes": [],
+                            "pageInfo": {"hasNextPage": True, "endCursor": None},
+                        }
+                    }
+                }
+            },
+        )
+
+    client, _, _ = make_client(tmp_path, runner)
+    with pytest.raises(GitHubError):
+        list(
+            client.iter_graphql_pages(
+                "query { repository { discussions { nodes { title } } } }",
+                connection_path=("repository", "discussions"),
+            )
+        )
+
+
+def test_5xx_retries_then_raises(tmp_path: Path) -> None:
+    calls = {"count": 0}
+
+    def runner(argv, input_text):
+        calls["count"] += 1
+        return http_response(500, {"message": "boom"})
+
+    client, _, sleeps = make_client(tmp_path, runner)
+    with pytest.raises(GitHubUnavailableError):
+        client.rest("repos/o/r")
+    assert calls["count"] == 2
+    assert sleeps == [1]
+
+
+def test_default_runner_decodes_utf8() -> None:
+    result = default_runner([sys.executable, "-c", "print('中文')"], None)
+    assert result.returncode == 0
+    assert result.stdout.strip() == "中文"
+
+
+def test_default_runner_preserves_newlines_and_encodes_input() -> None:
+    result = default_runner([
+        sys.executable, "-c",
+        "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())",
+    ], "HTTP/2.0 200 OK\r\n\r\n正文\r\n")
+    assert result.returncode == 0
+    assert result.stdout == "HTTP/2.0 200 OK\r\n\r\n正文\r\n"
+
+
+def test_default_runner_bounds_stdout_memory_and_terminates_child() -> None:
+    result = default_runner(
+        [sys.executable, "-c", "import os; os.write(1, b'x' * (1024 * 1024))"],
+        None,
+        max_output_bytes=4096,
+    )
+    assert result.output_limit_exceeded
+    assert result.output_bytes > 4096
+    assert len(result.stdout.encode("utf-8")) <= 4096
+
+
+def test_default_runner_timeout_kills_child() -> None:
+    result = default_runner(
+        [sys.executable, "-c", "import time; time.sleep(2)"], None, timeout=0.05,
+    )
+    assert result.returncode == 124
+    assert result.stderr == "gh api timed out"
+
+
+def test_default_runner_timeout_even_when_child_closes_pipes() -> None:
+    result = default_runner(
+        [sys.executable, "-c", "import os, time; os.close(1); os.close(2); time.sleep(2)"],
+        None,
+        timeout=0.05,
+    )
+    assert result.returncode == 124
+
+
+def test_initial_runtime_is_treated_as_seconds(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(200, {"ok": True})
+
+    client, _, _ = make_client(
+        tmp_path,
+        runner,
+        initial_usage={"runtime_seconds": 35},
+    )
+    assert client.rest("repos/o/r") == {"ok": True}
+
+
+def test_initial_runtime_blocks_after_cumulative_limit(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(200, {"ok": True})
+
+    client, store, _ = make_client(
+        tmp_path,
+        runner,
+        initial_usage={"runtime_seconds": 35 * 60},
+    )
+    with pytest.raises(BudgetExceededError):
+        client.rest("repos/o/r")
+    assert store.read_jsonl("requests.jsonl") == []
+
+
+def test_initial_total_bytes_counts_toward_budget(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(200, {"ok": True})
+
+    budget = {**BUDGET, "max_total_bytes": 100}
+    client, store, _ = make_client(
+        tmp_path,
+        runner,
+        budget,
+        initial_usage={"total_bytes": 100},
+    )
+    with pytest.raises(BudgetExceededError):
+        client.rest("repos/o/r")
+    assert store.read_jsonl("requests.jsonl") == []
+
+
+def test_total_bytes_accumulates_across_attempts(tmp_path: Path) -> None:
+    def runner(argv, input_text):
+        return http_response(200, {"data": "x" * 50})
+
+    budget = {**BUDGET, "max_total_bytes": 100}
+    client, store, _ = make_client(
+        tmp_path,
+        runner,
+        budget,
+        initial_usage={"total_bytes": 60},
+    )
+    with pytest.raises(BudgetExceededError):
+        client.rest("repos/o/r")
+    records = store.read_jsonl("requests.jsonl")
+    assert len(records) == 1
+
+
+def test_custom_headers_are_validated_and_forwarded(tmp_path: Path) -> None:
+    seen: list[list[str]] = []
+
+    def runner(argv, input_text):
+        seen.append(argv)
+        return http_response(200, {"ok": True})
+
+    client, _, _ = make_client(tmp_path, runner, BUDGET)
+    assert client.rest("repos/o/r", headers={"Accept": "application/vnd.github.v3.diff"}) == {
+        "ok": True
+    }
+    assert "Accept: application/vnd.github.v3.diff" in seen[0]
+
+    with pytest.raises(GitHubError):
+        client.rest("repos/o/r", headers={"Accept": "x\r\nX-Injected: 1"})
+    with pytest.raises(GitHubError):
+        validate_headers({"Bad Header": "value"})
+
+    def diff_runner(argv, input_text):
+        return CommandResult(0, "HTTP/2.0 200 OK\n\ndiff --git", "")
+
+    text_client, _, _ = make_client(tmp_path, diff_runner, BUDGET)
+    assert text_client.rest_text("repos/o/r") == "diff --git"

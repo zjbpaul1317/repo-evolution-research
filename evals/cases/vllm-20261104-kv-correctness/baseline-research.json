@@ -1,0 +1,522 @@
+{
+  "schema_version": "1.3",
+  "run_id": "20261104T120744Z-f0067783",
+  "created_at": "2026-11-07T07:24:32Z",
+  "topics": [
+    {
+      "id": "topic-attention",
+      "title": "稀疏注意力 Top-k 正确性",
+      "research_question": "溢出会怎样破坏 top-k，原 PR 是否已交付？",
+      "summary": "候选缓冲区溢出可产生合法但错误的索引；关闭原 PR 不证明该实现合并，替代 PR 仍需单独核验。",
+      "claim_ids": {
+        "background": [],
+        "problem": [],
+        "design": [],
+        "implementation": [
+          "C-topk",
+          "C-topk-followup"
+        ],
+        "tradeoff": [],
+        "unresolved": [
+          "U-attention"
+        ],
+        "outlook": []
+      },
+      "capability_ids": [
+        "cap-topk"
+      ],
+      "reading_item_ids": [
+        "read-0"
+      ],
+      "gaps": [
+        "仅覆盖本用例的四份 PR；不代表全仓库技术演进。"
+      ]
+    },
+    {
+      "id": "topic-checkpoint",
+      "title": "Mamba prefill 内部检查点",
+      "research_question": "prefix caching 如何减少重复模型执行，收益适用范围是什么？",
+      "summary": "内部检查点避免第二次整模型 forward；作者给出特定并发下的 TTFT 对比，但 spec decode 等仍属后续范围。",
+      "claim_ids": {
+        "background": [],
+        "problem": [],
+        "design": [],
+        "implementation": [
+          "C-mamba",
+          "C-mamba-perf"
+        ],
+        "tradeoff": [
+          "C-mamba-limit"
+        ],
+        "unresolved": [
+          "U-checkpoint"
+        ],
+        "outlook": []
+      },
+      "capability_ids": [
+        "cap-mamba"
+      ],
+      "reading_item_ids": [
+        "read-1"
+      ],
+      "gaps": [
+        "仅覆盖本用例的四份 PR；不代表全仓库技术演进。"
+      ]
+    },
+    {
+      "id": "topic-recovery",
+      "title": "KV offload 所有权与加载失败恢复",
+      "research_question": "共享区生命周期与 load failure 回滚各自解决什么？",
+      "summary": "两份开放 PR 分别处理资源所有权和请求状态恢复；前者划分正常释放与启动回滚，后者恢复 scheduler/MRV2 一致性。",
+      "claim_ids": {
+        "background": [],
+        "problem": [],
+        "design": [],
+        "implementation": [
+          "C-ownership",
+          "C-cleanup",
+          "C-rollback"
+        ],
+        "tradeoff": [
+          "C-rollback-limit"
+        ],
+        "unresolved": [
+          "U-recovery"
+        ],
+        "outlook": []
+      },
+      "capability_ids": [
+        "cap-ownership",
+        "cap-rollback"
+      ],
+      "reading_item_ids": [
+        "read-2",
+        "read-3"
+      ],
+      "gaps": [
+        "仅覆盖本用例的四份 PR；不代表全仓库技术演进。"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "id": "C-topk",
+      "text": "PR #52149 正文描述固定候选缓冲区溢出后，索引仍可能合法且唯一，但选中值并非真正 top-k；不能把索引合法等同于选择正确。",
+      "kind": "observed",
+      "evidence_ids": [
+        "ev-a6f5e436e49738ea"
+      ],
+      "contradicting_evidence_ids": [],
+      "confidence": "high",
+      "confidence_reason": "仅确认保存的 PR 正文或评论陈述，未独立运行 GPU 测试。",
+      "scope": {
+        "entity_ids": [
+          "github.com/vllm-project/vllm/pull/52149"
+        ],
+        "capability_id": "cap-topk",
+        "revision": null,
+        "version": null
+      },
+      "reason": null,
+      "missing_evidence": [],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "C-topk-followup",
+      "text": "PR #52149 的后续评论把修复指向 #59645 和 #62936；本次仅保留评论归属，不把替代 PR 的合并或发布状态归给原 PR。",
+      "kind": "observed",
+      "evidence_ids": [
+        "ev-df1ea030da3061a5"
+      ],
+      "contradicting_evidence_ids": [],
+      "confidence": "high",
+      "confidence_reason": "仅确认保存的 PR 正文或评论陈述，未独立运行 GPU 测试。",
+      "scope": {
+        "entity_ids": [
+          "github.com/vllm-project/vllm/pull/52149"
+        ],
+        "capability_id": "cap-topk",
+        "revision": null,
+        "version": null
+      },
+      "reason": null,
+      "missing_evidence": [],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "C-mamba",
+      "text": "已合并 PR #52789 的正文描述：内部 prefill checkpoint 避免再执行一次包含 attention、MoE、routing 和 TP collectives 的整模型 forward；这里确认的是 PR 描述，未独立验证运行时。",
+      "kind": "observed",
+      "evidence_ids": [
+        "ev-ac206b9848bc7c7f"
+      ],
+      "contradicting_evidence_ids": [],
+      "confidence": "high",
+      "confidence_reason": "仅确认保存的 PR 正文或评论陈述，未独立运行 GPU 测试。",
+      "scope": {
+        "entity_ids": [
+          "github.com/vllm-project/vllm/pull/52789"
+        ],
+        "capability_id": "cap-mamba",
+        "revision": null,
+        "version": null
+      },
+      "reason": null,
+      "missing_evidence": [],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "C-mamba-perf",
+      "text": "PR #52789 作者给出的 TTFT 表在并发 1/4/16 下分别为 435.28→394.19 ms、1450.94→1080.78 ms、2648.48→2099.69 ms；这是作者配置下的观测，不能推广为所有部署的收益。",
+      "kind": "observed",
+      "evidence_ids": [
+        "ev-a6baea97a20723c5"
+      ],
+      "contradicting_evidence_ids": [],
+      "confidence": "high",
+      "confidence_reason": "仅确认保存的 PR 正文或评论陈述，未独立运行 GPU 测试。",
+      "scope": {
+        "entity_ids": [
+          "github.com/vllm-project/vllm/pull/52789"
+        ],
+        "capability_id": "cap-mamba",
+        "revision": null,
+        "version": null
+      },
+      "reason": null,
+      "missing_evidence": [],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "C-mamba-limit",
+      "text": "PR #52789 仍将 speculative decoding、更多任务支持和避免两次 FlashKDA kernel 调用列为后续任务，内部 checkpoint 的已完成范围不包含这些任务。",
+      "kind": "observed",
+      "evidence_ids": [
+        "ev-d379cc778e2c3565"
+      ],
+      "contradicting_evidence_ids": [],
+      "confidence": "high",
+      "confidence_reason": "仅确认保存的 PR 正文或评论陈述，未独立运行 GPU 测试。",
+      "scope": {
+        "entity_ids": [
+          "github.com/vllm-project/vllm/pull/52789"
+        ],
+        "capability_id": "cap-mamba",
+        "revision": null,
+        "version": null
+      },
+      "reason": null,
+      "missing_evidence": [],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "C-ownership",
+      "text": "开放 PR #53073 提议把共享 mmap 的 pathname ownership、启动失败清理和正常本地资源清理分开；尚未合并。",
+      "kind": "observed",
+      "evidence_ids": [
+        "ev-baaa2f6ec0f9bc82"
+      ],
+      "contradicting_evidence_ids": [],
+      "confidence": "high",
+      "confidence_reason": "仅确认保存的 PR 正文或评论陈述，未独立运行 GPU 测试。",
+      "scope": {
+        "entity_ids": [
+          "github.com/vllm-project/vllm/pull/53073"
+        ],
+        "capability_id": "cap-ownership",
+        "revision": null,
+        "version": null
+      },
+      "reason": null,
+      "missing_evidence": [],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "C-cleanup",
+      "text": "PR #53073 正文说明正常 cleanup 只释放本地 tensor、memoryview、mmap 和 fd，路径删除由成功初始化或 abort_startup_cleanup 处理；这是候选修复的设计陈述，未独立运行验证。",
+      "kind": "observed",
+      "evidence_ids": [
+        "ev-612abed8a0cf42c7"
+      ],
+      "contradicting_evidence_ids": [],
+      "confidence": "high",
+      "confidence_reason": "仅确认保存的 PR 正文或评论陈述，未独立运行 GPU 测试。",
+      "scope": {
+        "entity_ids": [
+          "github.com/vllm-project/vllm/pull/53073"
+        ],
+        "capability_id": "cap-ownership",
+        "revision": null,
+        "version": null
+      },
+      "reason": null,
+      "missing_evidence": [],
+      "state_time_basis": "observed_current",
+      "evidence_quotes": {
+        "ev-612abed8a0cf42c7": "Normal `cleanup()` only releases local tensors, memoryviews, mmap objects,\n  and file descriptors. Path removal is handled by successful initialization\n  or `abort_startup_cleanup()`."
+      }
+    },
+    {
+      "id": "C-rollback",
+      "text": "开放 PR #53298 提议在同步外部 KV load 失败且使用 recompute 策略时，在恢复 decoding 前回滚 scheduler 与 MRV2 的已接受请求状态；尚未合并。",
+      "kind": "observed",
+      "evidence_ids": [
+        "ev-b48698bf3c3af041"
+      ],
+      "contradicting_evidence_ids": [],
+      "confidence": "high",
+      "confidence_reason": "仅确认保存的 PR 正文或评论陈述，未独立运行 GPU 测试。",
+      "scope": {
+        "entity_ids": [
+          "github.com/vllm-project/vllm/pull/53298"
+        ],
+        "capability_id": "cap-rollback",
+        "revision": null,
+        "version": null
+      },
+      "reason": null,
+      "missing_evidence": [],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "C-rollback-limit",
+      "text": "PR #53298 作者明确尚未验证真实 multi-GPU/NCCL、完整 Mamba/RecoverSSM load rejection、layerwise loading、partial-copy failure、性能和跨硬件 bitwise determinism。",
+      "kind": "observed",
+      "evidence_ids": [
+        "ev-394a035d9d38fd1d"
+      ],
+      "contradicting_evidence_ids": [],
+      "confidence": "high",
+      "confidence_reason": "仅确认保存的 PR 正文或评论陈述，未独立运行 GPU 测试。",
+      "scope": {
+        "entity_ids": [
+          "github.com/vllm-project/vllm/pull/53298"
+        ],
+        "capability_id": "cap-rollback",
+        "revision": null,
+        "version": null
+      },
+      "reason": null,
+      "missing_evidence": [],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "U-attention",
+      "text": "本主题能力是否已在某个 release tag 实际交付仍未知。",
+      "kind": "unknown",
+      "evidence_ids": [],
+      "contradicting_evidence_ids": [],
+      "confidence": "low",
+      "confidence_reason": "未进行 tag 内容核验。",
+      "scope": {
+        "entity_ids": [],
+        "capability_id": null,
+        "revision": null,
+        "version": null
+      },
+      "reason": "当前材料没有建立 verified_in_release 交付核验。",
+      "missing_evidence": [
+        "release tag 内容核验",
+        "verified_in_release 关系"
+      ],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "U-checkpoint",
+      "text": "本主题能力是否已在某个 release tag 实际交付仍未知。",
+      "kind": "unknown",
+      "evidence_ids": [],
+      "contradicting_evidence_ids": [],
+      "confidence": "low",
+      "confidence_reason": "未进行 tag 内容核验。",
+      "scope": {
+        "entity_ids": [],
+        "capability_id": null,
+        "revision": null,
+        "version": null
+      },
+      "reason": "当前材料没有建立 verified_in_release 交付核验。",
+      "missing_evidence": [
+        "release tag 内容核验",
+        "verified_in_release 关系"
+      ],
+      "state_time_basis": "observed_current"
+    },
+    {
+      "id": "U-recovery",
+      "text": "本主题能力是否已在某个 release tag 实际交付仍未知。",
+      "kind": "unknown",
+      "evidence_ids": [],
+      "contradicting_evidence_ids": [],
+      "confidence": "low",
+      "confidence_reason": "未进行 tag 内容核验。",
+      "scope": {
+        "entity_ids": [],
+        "capability_id": null,
+        "revision": null,
+        "version": null
+      },
+      "reason": "当前材料没有建立 verified_in_release 交付核验。",
+      "missing_evidence": [
+        "release tag 内容核验",
+        "verified_in_release 关系"
+      ],
+      "state_time_basis": "observed_current"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "cap-topk",
+      "topic_id": "topic-attention",
+      "title": "persistent_topk 溢出精确回退",
+      "scope": "PR #52149 自身；不包括替代 PR",
+      "proposal_state": "unknown",
+      "implementation_state": "unknown",
+      "delivery_state": "unknown",
+      "availability": "unknown",
+      "target_branch": "main",
+      "observed_revision": null,
+      "verified_versions": [],
+      "requirements": {
+        "done": [],
+        "remaining": []
+      },
+      "evidence_ids": [
+        "ev-a6f5e436e49738ea",
+        "ev-df1ea030da3061a5"
+      ]
+    },
+    {
+      "id": "cap-mamba",
+      "topic_id": "topic-checkpoint",
+      "title": "Mamba 内部 prefill checkpoint",
+      "scope": "内部 checkpoint；不包括正文列出的后续任务",
+      "proposal_state": "unknown",
+      "implementation_state": "merged",
+      "delivery_state": "unknown",
+      "availability": "unknown",
+      "target_branch": "main",
+      "observed_revision": null,
+      "verified_versions": [],
+      "requirements": {
+        "done": [],
+        "remaining": []
+      },
+      "evidence_ids": [
+        "ev-ac206b9848bc7c7f",
+        "ev-a6baea97a20723c5",
+        "ev-d379cc778e2c3565"
+      ]
+    },
+    {
+      "id": "cap-ownership",
+      "topic_id": "topic-recovery",
+      "title": "共享 mmap 生命周期清理",
+      "scope": "PR #53073 提议的 mmap 路径与本地资源生命周期",
+      "proposal_state": "unknown",
+      "implementation_state": "in_progress",
+      "delivery_state": "unknown",
+      "availability": "unknown",
+      "target_branch": "main",
+      "observed_revision": null,
+      "verified_versions": [],
+      "requirements": {
+        "done": [],
+        "remaining": []
+      },
+      "evidence_ids": [
+        "ev-baaa2f6ec0f9bc82",
+        "ev-612abed8a0cf42c7"
+      ]
+    },
+    {
+      "id": "cap-rollback",
+      "topic_id": "topic-recovery",
+      "title": "KV load rejection 状态恢复",
+      "scope": "PR #53298 的状态恢复设计，保留作者未验证边界",
+      "proposal_state": "unknown",
+      "implementation_state": "in_progress",
+      "delivery_state": "unknown",
+      "availability": "unknown",
+      "target_branch": "main",
+      "observed_revision": null,
+      "verified_versions": [],
+      "requirements": {
+        "done": [],
+        "remaining": []
+      },
+      "evidence_ids": [
+        "ev-b48698bf3c3af041",
+        "ev-394a035d9d38fd1d"
+      ]
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U-attention",
+      "claim_id": "U-attention",
+      "topic_id": "topic-attention"
+    },
+    {
+      "id": "U-checkpoint",
+      "claim_id": "U-checkpoint",
+      "topic_id": "topic-checkpoint"
+    },
+    {
+      "id": "U-recovery",
+      "claim_id": "U-recovery",
+      "topic_id": "topic-recovery"
+    }
+  ],
+  "reading_list": [
+    {
+      "id": "read-0",
+      "priority": "P0",
+      "kind": "pr",
+      "title": "[Bugfix] Handle persistent top-k candidate overflow",
+      "url": "https://github.com/vllm-project/vllm/pull/52149",
+      "entity_id": "github.com/vllm-project/vllm/pull/52149",
+      "why": "核对设计机制、当前状态、作者验证声明和未完成范围。",
+      "order": 0
+    },
+    {
+      "id": "read-1",
+      "priority": "P1",
+      "kind": "pr",
+      "title": "[Perf] Support internal prefill checkpoints for Mamba prefix caching, 9%~25% TTFT improvement",
+      "url": "https://github.com/vllm-project/vllm/pull/52789",
+      "entity_id": "github.com/vllm-project/vllm/pull/52789",
+      "why": "核对设计机制、当前状态、作者验证声明和未完成范围。",
+      "order": 1
+    },
+    {
+      "id": "read-2",
+      "priority": "P1",
+      "kind": "pr",
+      "title": "[Bugfix][KV Offload] Fix shared-region ownership and startup cleanup",
+      "url": "https://github.com/vllm-project/vllm/pull/53073",
+      "entity_id": "github.com/vllm-project/vllm/pull/53073",
+      "why": "核对设计机制、当前状态、作者验证声明和未完成范围。",
+      "order": 2
+    },
+    {
+      "id": "read-3",
+      "priority": "P1",
+      "kind": "pr",
+      "title": "[Bugfix][KV Connector] Restore state after KV load rejection",
+      "url": "https://github.com/vllm-project/vllm/pull/53298",
+      "entity_id": "github.com/vllm-project/vllm/pull/53298",
+      "why": "核对设计机制、当前状态、作者验证声明和未完成范围。",
+      "order": 3
+    }
+  ],
+  "limitations": [
+    "本研究仅为四份 PR 的来源评审验收案例；主题召回只针对该有限范围，不代表完整 90 天项目研究。",
+    "预算限制使 collect=partial；discovery_paths、files、activity_prs、activity_issues、releases、docs 等通道为 partial，缺口保留。",
+    "activity_discussions、discussion_detail 等未请求通道不构成否定证据。",
+    "状态按 observed_current 观察；窗口结束后的评论/状态只作观察时上下文，不是窗口末历史截面。",
+    "未独立执行 GPU/model/性能验证；性能和测试描述均归属 PR 作者。",
+    "未核验 release tag 交付、替代 PR 实现和所有后续任务。",
+    "Agent 来源评审与后续报告由同一会话执行，不是独立人工盲评。"
+  ]
+}

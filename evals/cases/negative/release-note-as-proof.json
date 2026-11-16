@@ -1,0 +1,6 @@
+{
+  "id": "release-note-as-proof",
+  "mutation": "release_note_as_proof",
+  "check": "validation_error",
+  "expected_code": "released_without_verified_release"
+}

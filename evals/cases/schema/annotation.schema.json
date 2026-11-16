@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repo-evolution-research.local/schemas/eval-annotation.schema.json",
+  "title": "Human annotation for one repository evolution research case",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "repository",
+    "window",
+    "source",
+    "topics",
+    "capabilities",
+    "unknowns",
+    "relations",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "timezone"],
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "default_branch_sha",
+        "annotation_version",
+        "annotated_by",
+        "annotated_at"
+      ],
+      "properties": {
+        "default_branch_sha": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "snapshot": {
+          "type": ["string", "null"]
+        },
+        "annotation_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "annotated_by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "annotated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "topics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/topic"
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/capability"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/unknown"
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relation"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "topic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "research_question",
+        "why_it_matters",
+        "key_evidence_ids"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title_aliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "research_question": {
+          "type": "string",
+          "minLength": 1
+        },
+        "why_it_matters": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key_evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "topic_title",
+        "title",
+        "proposal_state",
+        "implementation_state",
+        "delivery_state",
+        "availability"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "topic_title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title_aliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "proposal_state": {
+          "$ref": "#/$defs/proposal_state"
+        },
+        "implementation_state": {
+          "$ref": "#/$defs/implementation_state"
+        },
+        "delivery_state": {
+          "$ref": "#/$defs/delivery_state"
+        },
+        "availability": {
+          "$ref": "#/$defs/availability"
+        },
+        "requirements_done": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "requirements_remaining": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "key_evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "unknown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topic_title", "reason", "missing_evidence"],
+      "properties": {
+        "topic_title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "missing_evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from_id", "to_id", "type"],
+      "properties": {
+        "from_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "why": {
+          "type": "string"
+        }
+      }
+    },
+    "proposal_state": {
+      "enum": ["unknown", "proposed", "discussing", "accepted", "rejected", "superseded"]
+    },
+    "implementation_state": {
+      "enum": ["unknown", "not_started", "in_progress", "partially_merged", "merged", "reverted"]
+    },
+    "delivery_state": {
+      "enum": ["unknown", "not_found", "prerelease", "released"]
+    },
+    "availability": {
+      "enum": ["unknown", "experimental", "opt_in", "default_on", "deprecated", "removed"]
+    }
+  }
+}
