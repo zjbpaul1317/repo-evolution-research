@@ -64,7 +64,7 @@ gh auth login
 bash skills/repo-evolution-research/rer doctor --repo vllm-project/vllm
 ```
 
-Read every `doctor` check. Exit code `3` means a required environment, authentication, or access check failed. On first run the launcher prepares a locked environment in the `uv` cache and reports progress on stderr.
+Read every `doctor` check. Exit code `3` means a required environment, authentication, or access check failed. On first run the launcher prepares a locked environment in the `uv` cache and reports progress on stderr. Doctor output also has a `runtime:` line with the launcher mode, interpreter path, uv version and offline flag.
 
 ### Load the Skill
 

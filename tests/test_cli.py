@@ -307,6 +307,57 @@ def test_doctor_redacts_auth_failure(monkeypatch) -> None:
     assert result["result"]["status"] == "degraded"
 
 
+def test_doctor_reports_runtime_provenance(monkeypatch) -> None:
+    monkeypatch.setenv("RER_LAUNCHER", "uv-locked")
+    monkeypatch.setenv("UV_OFFLINE", "1")
+    monkeypatch.setattr(
+        cli.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name in ("git", "gh", "uv") else None,
+    )
+
+    def fake_run(command):
+        if command[0].endswith("uv"):
+            return subprocess.CompletedProcess(command, 0, "uv 0.9.18 (abc 2025-01-01)\n", "")
+        if command[0].endswith("gh") and "auth" in command:
+            return subprocess.CompletedProcess(command, 0, "Logged in to github.com\n", "")
+        if command[0].endswith("gh"):
+            return subprocess.CompletedProcess(command, 0, "gh version 2.0.0\n", "")
+        return subprocess.CompletedProcess(command, 0, "git version 2.0.0\n", "")
+
+    monkeypatch.setattr(cli, "_run_command", fake_run)
+    args = cli.build_parser().parse_args(["doctor"])
+    result, lines = cli.command_doctor(args)
+
+    runtime = result["result"]["runtime"]
+    assert runtime["launcher"] == "uv-locked"
+    assert runtime["dependencies_locked"] is True
+    assert runtime["offline"] is True
+    assert runtime["uv"]["version"] == "0.9.18"
+    assert runtime["interpreter"] == sys.executable
+    assert any(line.startswith("runtime: launcher=uv-locked") for line in lines)
+
+
+def test_doctor_reports_direct_and_offline_false(monkeypatch) -> None:
+    monkeypatch.delenv("RER_LAUNCHER", raising=False)
+    monkeypatch.delenv("UV_OFFLINE", raising=False)
+    monkeypatch.setattr(cli.shutil, "which", lambda name: None)
+
+    def fake_run(command):
+        return subprocess.CompletedProcess(command, 1, "", "unavailable")
+
+    monkeypatch.setattr(cli, "_run_command", fake_run)
+    args = cli.build_parser().parse_args(["doctor"])
+    result, lines = cli.command_doctor(args)
+
+    runtime = result["result"]["runtime"]
+    assert runtime["launcher"] == "direct"
+    assert runtime["dependencies_locked"] is False
+    assert runtime["offline"] is False
+    assert runtime["uv"] is None
+    assert any("uv=not found" in line for line in lines)
+
+
 def test_init_applies_deep_read_budget(tmp_path: Path) -> None:
     result = run_cli(
         tmp_path,

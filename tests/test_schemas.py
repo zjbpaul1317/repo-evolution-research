@@ -335,11 +335,10 @@ def test_entity_ids_reject_trailing_newline() -> None:
     assert not is_entity_id("github.com/o/r\n")
 
 
-def test_schema_and_tool_versions_are_bumped() -> None:
-    from rer import SCHEMA_VERSION, TOOL_VERSION
+def test_schema_versions_match_samples() -> None:
+    from rer import SCHEMA_VERSION
 
     assert SCHEMA_VERSION == "1.3"
-    assert TOOL_VERSION == "0.2.9"
     assert load("config.sample.json")["schema_version"] == SCHEMA_VERSION
     assert load("research.sample.json")["schema_version"] == SCHEMA_VERSION
 

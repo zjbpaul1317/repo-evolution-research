@@ -20,6 +20,7 @@ fi
 
 if [ -n "${RER_PYTHON:-}" ]; then
   echo "rer: 使用 RER_PYTHON=${RER_PYTHON}；依赖未经过锁文件与 uv 校验" >&2
+  export RER_LAUNCHER=python-override
   exec "${RER_PYTHON}" "${SCRIPT}" "$@"
 fi
 
@@ -58,4 +59,5 @@ MSG
   exit 3
 fi
 
+export RER_LAUNCHER=uv-locked
 exec uv run --locked --no-build --script "${SCRIPT}" "$@"

@@ -4,6 +4,8 @@
 
 ### 改进
 
+- `doctor` 结果新增 `runtime` 环境溯源：启动方式（`direct` / `uv-locked` / `python-override`）、解释器路径与版本、平台、uv 路径与版本、`offline` 和 `UV_CACHE_DIR`；text 模式追加同名 `runtime:` 行。`rer` 通过 `RER_LAUNCHER` 标记实际入口，`dependencies_locked` 只表示是否走 `--locked` 路径。
+- 版本号以 `rer/__init__.py` 的 `TOOL_VERSION` 为运行时唯一来源；新增 `tests/test_version_sources.py` 校验 `pyproject.toml`、中英文 README 和 `references/workflow.md` 一致，并移除 `tests/test_schemas.py` 中的重复硬编码。
 - 新增 Skill 目录下的 `rer` 启动器：依据 `scripts/research.py` 的 PEP 723 内联元数据与相邻的 `research.py.lock`，通过 `uv run --locked --no-build --script` 准备隔离运行环境；保留调用者工作目录，stdout、stderr 与退出码原样透传。uv 缺失、版本低于 0.9 或环境准备失败时以 exit 3 报告原因与恢复方式。
 - `research.py` 在导入 CLI 前校验解释器与平台：Python < 3.11 或非 macOS/Linux/WSL 时输出结构化 `environment_error`（`source=bootstrap`）并以 exit 3 结束，不再抛出 traceback。`RER_PYTHON` 可绕过 uv，但会在 stderr 声明依赖未经锁文件校验。
 - `SKILL.md` 的命令改为 `bash "$SKILL_DIR/rer"`，不再假设仓库根目录；frontmatter 新增 `license` 与 `compatibility`，正文新增 Setup 小节。新增 `references/setup.md`，覆盖 uv 安装、企业镜像、`UV_PYTHON_DOWNLOADS`/`UV_OFFLINE`、`GH_TOKEN` 与锁文件维护。
@@ -13,6 +15,7 @@
 
 ### 验证
 
+- 2026-11-17，macOS arm64 / Python 3.13.3：`pytest -q` 1063 passed；lint、生成资产与`git diff --check` 通过。经 `rer` 运行时 doctor 的 `runtime` 显示 `launcher=uv-locked`、uv 缓存解释器与 uv 0.9.18；直接以 `.venv/bin/python` 运行时显示 `launcher=direct`。未在 Linux 验证。
 - 2026-11-17，macOS arm64 / Python 3.13.3：`pytest -q` 1059 passed（新增 7 个 bootstrap 用例）；`scripts/gen_assets.py --check`、lint 与 `git diff --check` 通过；uv 0.9.18 下 `uv lock --script ... --check` 通过。启动器在临时目录及 `RER_PYTHON` 入口运行 `--help` 均成功，`/usr/bin/python3`（3.9.6）直接运行脚本返回 exit 3 与结构化 bootstrap 错误。本轮未验证 Linux/Windows，也未运行新的真实 GitHub 采集。
 - 2026-11-14，macOS arm64 / Python 3.13.3：公开 `vllm-project/router` 14 天窗口真实采集、强制重采和 selection 深读均无阻塞 coverage；最终 104 次请求、10,902,865 字节、4 个深读实体。最终 audit 核验 1,535 条引文、109 条关系、419 个文本 blob，通过。详见 [`real workflow acceptance`](docs/acceptance/2026-11-14-real-workflow.md)。
 - 真实采集发生在进度输出与有界子进程 runner 修改之前；新版 runner 单独完成一条公开 GitHub API 请求冒烟。完整离线回归、runner 限流/超时和 CLI 进度测试在修改后运行。
@@ -42,6 +45,7 @@
 
 ### 开发检查
 
+- 新增 doctor 环境溯源用例，覆盖 `uv-locked`/`direct` 两种启动方式、uv 缺失和 `offline` 标记；新增版本来源一致性用例。
 - 新增 `tests/test_bootstrap.py`：断言 PEP 723 内联元数据与 `pyproject.toml` 的 `requires-python`/`dependencies` 一致、`research.py.lock` 存在且覆盖声明的依赖、启动器可从任意目录运行并透传退出码，以及旧解释器返回结构化 `environment_error`。
 - CI 新增 `lockfile` job，使用 `uv>=0.9,<0.10` 执行 `uv lock --script ... --check`，防止内联依赖改动后漏提交锁文件。
 - lint 与编译检查覆盖 `evals/*.py` 和维护脚本，保留对本地 `evals/results/` 的排除；中英文 README 与维护指南补充性能对比命令和测量边界。

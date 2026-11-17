@@ -7,6 +7,7 @@ import copy
 import functools
 import importlib.metadata
 import json
+import os
 import platform
 import re
 import shutil
@@ -1485,6 +1486,30 @@ def _restore_previous_snapshot(
     manifest["notes"].append(note)
 
 
+def _runtime_provenance() -> dict[str, Any]:
+    """Describe the interpreter and launcher that are actually running."""
+    uv_path = shutil.which("uv")
+    uv_version: str | None = None
+    if uv_path:
+        completed = _run_command([uv_path, "--version"])
+        if completed.returncode == 0:
+            parts = _first_line(completed).split()
+            uv_version = parts[1] if len(parts) > 1 and parts[0] == "uv" else " ".join(parts)
+    launcher = os.environ.get("RER_LAUNCHER", "direct")
+    offline = os.environ.get("UV_OFFLINE", "").strip().lower() not in ("", "0", "false")
+    return {
+        "launcher": launcher,
+        "dependencies_locked": launcher == "uv-locked",
+        "interpreter": sys.executable,
+        "implementation": platform.python_implementation(),
+        "version": platform.python_version(),
+        "platform": f"{platform.system()} {platform.machine()}",
+        "offline": offline,
+        "uv": {"path": uv_path, "version": uv_version} if uv_path else None,
+        "uv_cache_dir": os.environ.get("UV_CACHE_DIR") or None,
+    }
+
+
 def command_doctor(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
     checks: list[dict[str, str]] = []
 
@@ -1618,13 +1643,24 @@ def command_doctor(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]
         critical.add("repo_access")
     degraded = any(check["status"] != "ok" and check["name"] in critical for check in checks)
     status = "degraded" if degraded else "ok"
+    runtime = _runtime_provenance()
     result = {
         "ok": True,
         "command": "doctor",
-        "result": {"status": status, "checks": checks, "repo": repo_detail},
+        "result": {"status": status, "checks": checks, "repo": repo_detail, "runtime": runtime},
         "warnings": [] if not degraded else ["部分必需能力不可用"],
     }
     lines = [f"[{check['status']}] {check['name']}: {check['detail']}" for check in checks]
+    uv_detail = (
+        f"{runtime['uv']['version'] or 'unknown'} ({runtime['uv']['path']})"
+        if runtime["uv"]
+        else "not found"
+    )
+    lines.append(
+        f"runtime: launcher={runtime['launcher']} python={runtime['version']}"
+        f" ({runtime['interpreter']}) uv={uv_detail}"
+        f" offline={'yes' if runtime['offline'] else 'no'}"
+    )
     if repo_detail:
         lines.append(f"repo: {repo_detail['canonical_url']} (access={repo_detail['access']})")
     return result, lines

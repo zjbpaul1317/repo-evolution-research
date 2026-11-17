@@ -70,7 +70,7 @@ gh auth login
 bash skills/repo-evolution-research/rer doctor --repo vllm-project/vllm
 ```
 
-`doctor` 检查 Python、依赖、格式校验器、`gh` 认证和仓库访问权限。关键检查失败时退出码为 `3`，请先修复环境。首次运行时启动器会在 `uv` 缓存中准备已锁定的依赖环境，并在 stderr 输出进度。
+`doctor` 检查 Python、依赖、格式校验器、`gh` 认证和仓库访问权限。关键检查失败时退出码为 `3`，请先修复环境。首次运行时启动器会在 `uv` 缓存中准备已锁定的依赖环境，并在 stderr 输出进度。输出中的 `runtime:` 行给出启动方式、解释器路径、uv 版本和离线状态。
 
 ### 2. 让 Agent 使用 Skill
 

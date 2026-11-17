@@ -25,7 +25,7 @@
 
 | 阶段 | 命令 | 输入 | 产物 | 失败语义 |
 | --- | --- | --- | --- | --- |
-| doctor | `doctor [--repo]` | 环境、可选仓库 | stdout checks | 关键项失败退出 3 |
+| doctor | `doctor [--repo]` | 环境、可选仓库 | stdout checks 与 `runtime` 环境溯源 | 关键项失败退出 3 |
 | audit | `audit --run` | 已保存快照（可只读） | stdout 分类诊断与恢复步骤，不写入文件 | 仅旧派生索引需重建为 4；其他完整性问题为 6 |
 | init | `init --repo ...` | 参数 | run 目录、`manifest.json`、`config.resolved.json` | 参数错误退出 2 |
 | collect | `collect --run` | manifest/config | raw 文档、blobs、activity 视图、selection 决策、coverage、checkpoint | 阻塞缺口或 run-level 预算耗尽退出 4 |
@@ -36,6 +36,8 @@
 | 研究 | Agent 写 `analysis/research.json` | packs、evidence、文档 | topics/claims/capabilities/unknowns/reading_list/limitations | schema 错误由 validate 拒绝 |
 | validate | `validate --run` | research + ledger | `validation.json`、`evidence-review.md` | 门禁失败退出 5 |
 | render | `render --run` | 已校验 research、evidence 依赖 blob | `report.md`、`render-report.json` | 失败退出 5，写 `incomplete.md` |
+
+`doctor` 的 `runtime` 记录实际运行的启动方式（`direct` / `uv-locked` / `python-override`）、解释器路径与版本、平台、uv 路径与版本、`offline` 以及 `uv` 缓存目录。`dependencies_locked` 只表示是否经 `rer` 的 `--locked` 路径启动，不表示依赖语义正确。
 
 `--language` 和 `--compare-previous` 是保留参数：V0.1 报告固定中文，且尚未实现与上一窗口比较；传入不会改变输出，`init` 会在 JSON `warnings` 和 `manifest.notes` 中写一条可见提示。不要把它们描述成当前能力。
 
