@@ -4,7 +4,7 @@
 
 Repository Evolution Research 以 Agent Skill 为交付入口，Python CLI 为证据工具链。维护首页时优先说明：它回答什么问题、需要什么环境、如何让 Agent 使用、报告长什么样，以及结果的验证边界。
 
-当前版本从源码运行；`pyproject.toml` 中的版本并不表示已有同名 PyPI 发布或 GitHub Release。新增包装层、Web UI 或服务部署应单独定义范围，避免安装说明超出实际能力。
+当前版本通过 Skill 目录下的 `rer` 启动器运行，依赖由 PEP 723 元数据与 `scripts/research.py.lock` 锁定；`pyproject.toml` 中的版本并不表示已有同名 PyPI 发布或 GitHub Release。新增包装层、Web UI 或服务部署应单独定义范围，避免安装说明超出实际能力。
 
 ## GitHub 页面配置
 
@@ -64,6 +64,17 @@ python scripts/benchmark_packs.py --baseline-file /path/to/trusted/baseline/pack
 均淘汰 987 个候选，输出一致。此案例刻意覆盖大量候选集中在同一组且预算紧张的场景；
 不能把约 112 倍局部加速推广到完整 prepare 或真实采集。
 
+## 运行入口与依赖锁
+
+`rer` 是唯一对外入口，`scripts/research.py` 是它执行的脚本。运行时依赖只在这两处约定：
+
+- `scripts/research.py` 顶部 PEP 723 内联元数据声明 `requires-python` 与 `dependencies`；
+- `scripts/research.py.lock` 由 `uv lock --script scripts/research.py` 生成并提交。
+
+`rer` 以 `uv run --locked --no-build --script` 执行，因此锁文件缺失或过期会立即失败，而不是静默解析新版本。`--no-build` 拒绝现场源码构建，避免在缺少 wheel 的平台触发本地编译。改动依赖时同时更新 `pyproject.toml` 与内联元数据，再重新生成锁；`tests/test_bootstrap.py` 断言两处一致，CI 的 `lockfile` job 校验锁是否最新。
+
+启动器保持调用者工作目录，不读取调用方项目的依赖，也不在 Skill 目录内写环境。排障与离线/企业配置见 [`references/setup.md`](../skills/repo-evolution-research/references/setup.md)。修改启动器后，用干净目录和 `RER_PYTHON` 两种入口各跑一次 `--help`，并确认旧解释器返回 exit 3 的结构化 `environment_error`。
+
 ## 版本与发布
 
 首次正式发布前建议完成：
@@ -90,5 +101,5 @@ python scripts/benchmark_packs.py --baseline-file /path/to/trusted/baseline/pack
 | 近期 | 真实小窗口公开示例 | 来源可追溯、覆盖与局限明确、报告可读 |
 | 近期 | 扩充独立质量评审 | 标注者与报告作者分离，保留争议和样本边界 |
 | 后续 | 快照兼容与恢复体验 | 旧 run 诊断准确，副本恢复不破坏原件 |
-| 后续 | 可重复的依赖环境 | 按支持平台验证约束或锁文件的维护方案 |
+| 已完成 | 可重复的依赖环境 | `uv lock --script` + `--locked` + CI 锁校验；启动器与旧解释器错误路径已有测试 |
 | 按需 | 多语言报告、跨窗口比较、完整 diff | 先实现与验证，再调整首页能力声明 |

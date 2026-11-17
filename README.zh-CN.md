@@ -8,7 +8,7 @@
 
 适合刚接触一个开源项目、准备参与贡献，或希望持续理解项目技术演进的开发者。
 
-> 当前工具版本：`0.2.9`；快照 schema：`1.3`。项目处于早期开发阶段，运行方式是源码目录调用，目前不提供独立的 pip 安装包。
+> 当前工具版本：`0.2.9`；快照 schema：`1.3`。项目处于早期开发阶段。Skill 自带启动器，目前不提供独立的 pip 安装包。
 
 ## 你可以用它回答什么
 
@@ -58,6 +58,7 @@ flowchart LR
 ### 1. 准备环境
 
 - Python **3.11+**。
+- [uv](https://docs.astral.sh/uv/) **0.9+**；启动器通过 `uv` 解析 Skill 声明的依赖，无需手工 `pip install`。
 - **macOS 或 Linux**；存储锁使用 `fcntl`，原生 Windows 当前不支持，Windows 用户可使用 WSL。
 - [GitHub CLI `gh`](https://cli.github.com/)，以及可访问目标仓库的 GitHub 账号认证。
 - 要完成研究写作，需要能读取本地文件和运行命令的 Agent；也可以手工按照 schema 编写研究数据。
@@ -65,14 +66,11 @@ flowchart LR
 ```bash
 git clone https://github.com/zjbpaul1317/repo-evolution-research.git
 cd repo-evolution-research
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install 'jsonschema>=4.23,<5'
 gh auth login
-python skills/repo-evolution-research/scripts/research.py doctor --repo vllm-project/vllm
+bash skills/repo-evolution-research/rer doctor --repo vllm-project/vllm
 ```
 
-`doctor` 检查 Python、依赖、格式校验器、`gh` 认证和仓库访问权限。关键检查失败时退出码为 `3`，请先修复环境。
+`doctor` 检查 Python、依赖、格式校验器、`gh` 认证和仓库访问权限。关键检查失败时退出码为 `3`，请先修复环境。首次运行时启动器会在 `uv` 缓存中准备已锁定的依赖环境，并在 stderr 输出进度。
 
 ### 2. 让 Agent 使用 Skill
 
@@ -85,14 +83,22 @@ Skill 的完整目录是 [`skills/repo-evolution-research/`](skills/repo-evoluti
 安装 skills/repo-evolution-research 目录中的 Skill。
 ```
 
-然后使用上面的自然语言研究请求。不同宿主的发现路径和重新加载方式不同，参见 [Codex 官方 Skill 文档](https://developers.openai.com/codex/skills/)。依赖需要安装到 Agent 实际调用的 Python 环境；如使用本仓库虚拟环境，可明确要求 Agent 使用 `.venv/bin/python`。
+然后使用上面的自然语言研究请求。不同宿主的发现路径和重新加载方式不同，参见 [Codex 官方 Skill 文档](https://developers.openai.com/codex/skills/)。安装后的 Skill 不包含仓库根目录，必须用绝对路径调用启动器：
+
+```bash
+SKILL_DIR=~/.codex/skills/repo-evolution-research
+bash "$SKILL_DIR/rer" doctor --repo vllm-project/vllm
+```
+
+启动器要求 `uv` 在 `PATH` 中。它不读取调用方项目的依赖，并保留你调用时的工作目录。企业镜像、离线缓存、`GH_TOKEN` 和 `RER_PYTHON` 见 [环境准备](skills/repo-evolution-research/references/setup.md)。
 
 ### 3. 理解 CLI 研究流程
 
-以下命令从仓库根目录执行。先初始化一个小窗口，确认采集情况，再扩大研究范围：
+在用户自己的项目目录执行（不要把快照写进 Skill 安装目录）。`RER` 指向仓库内的启动器；已安装的 Skill 用 `$SKILL_DIR/rer`。先初始化一个小窗口，确认采集情况，再扩大研究范围：
 
 ```bash
-python skills/repo-evolution-research/scripts/research.py init \
+RER=skills/repo-evolution-research/rer
+bash "$RER" init \
   --repo vllm-project/vllm --days 30 --mode quick \
   --timezone Asia/Shanghai --focus scheduling --focus 'KV cache'
 ```
@@ -101,23 +107,23 @@ python skills/repo-evolution-research/scripts/research.py init \
 
 ```bash
 RUN='.repo-research/github.com/vllm-project/vllm/<run_id>'
-python skills/repo-evolution-research/scripts/research.py collect --run "$RUN"
-python skills/repo-evolution-research/scripts/research.py prepare --run "$RUN"
+bash "$RER" collect --run "$RUN"
+bash "$RER" prepare --run "$RUN"
 ```
 
 此时需要 Agent 阅读 `analysis/packs/*.md` 和候选材料。需要补读时，由 Agent 按 [selection 协议](skills/repo-evolution-research/references/workflow.md#selection-协议) 写入 `analysis/selection.json`，再执行：
 
 ```bash
-python skills/repo-evolution-research/scripts/research.py collect \
+bash "$RER" collect \
   --run "$RUN" --selection "$RUN/analysis/selection.json"
-python skills/repo-evolution-research/scripts/research.py prepare --run "$RUN"
+bash "$RER" prepare --run "$RUN"
 ```
 
 Agent 完成研究并写入 `analysis/research.json` 后，才能执行：
 
 ```bash
-python skills/repo-evolution-research/scripts/research.py validate --run "$RUN"
-python skills/repo-evolution-research/scripts/research.py render --run "$RUN"
+bash "$RER" validate --run "$RUN"
+bash "$RER" render --run "$RUN"
 ```
 
 最终输出为 `$RUN/report.md`；辅助输出包括 `analysis/validation.json`、`analysis/evidence-review.md` 和 `analysis/render-report.json`。需要检查旧快照时可使用只读命令 `audit --run "$RUN"`。
@@ -176,6 +182,7 @@ scripts/             资产生成和 lint 工具
 
 ```bash
 python -m pip install 'jsonschema>=4.23,<5' 'pytest>=8' 'ruff>=0.6' 'PyYAML>=6'
+uv lock --script skills/repo-evolution-research/scripts/research.py --check
 python -m pytest -q
 python scripts/gen_assets.py --check
 PYTHON=python bash scripts/lint.sh

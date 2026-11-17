@@ -8,7 +8,7 @@ A research Skill for coding agents, backed by a local Python CLI. It collects PR
 
 Use it when joining an unfamiliar project, preparing a contribution, or investigating a project's recent technical evolution.
 
-> Tool version: `0.2.9`. Snapshot schema: `1.3`. Early development. Reports currently use Chinese. Run the CLI from source; a standalone pip package is not provided.
+> Tool version: `0.2.9`. Snapshot schema: `1.3`. Early development. Reports currently use Chinese. The Skill ships its own launcher; no standalone pip package is provided.
 
 ## What it helps answer
 
@@ -52,6 +52,7 @@ An agent can request another reading round through `analysis/selection.json`. Cl
 ### Requirements
 
 - Python **3.11+**.
+- [uv](https://docs.astral.sh/uv/) **0.9+**. The launcher resolves the Skill's declared dependencies through `uv`; no manual `pip install` is required.
 - **macOS or Linux**. Storage locking uses `fcntl`; native Windows is unsupported. Use WSL on Windows.
 - [GitHub CLI `gh`](https://cli.github.com/), authenticated with access to the target repository.
 - An agent that can read local files and run commands to write the research, or a person following the JSON schemas.
@@ -59,14 +60,11 @@ An agent can request another reading round through `analysis/selection.json`. Cl
 ```bash
 git clone https://github.com/zjbpaul1317/repo-evolution-research.git
 cd repo-evolution-research
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install 'jsonschema>=4.23,<5'
 gh auth login
-python skills/repo-evolution-research/scripts/research.py doctor --repo vllm-project/vllm
+bash skills/repo-evolution-research/rer doctor --repo vllm-project/vllm
 ```
 
-Read every `doctor` check. Exit code `3` means a required environment, authentication, or access check failed.
+Read every `doctor` check. Exit code `3` means a required environment, authentication, or access check failed. On first run the launcher prepares a locked environment in the `uv` cache and reports progress on stderr.
 
 ### Load the Skill
 
@@ -79,14 +77,22 @@ Use $skill-installer to install the Skill at skills/repo-evolution-research
 from https://github.com/zjbpaul1317/repo-evolution-research.
 ```
 
-Discovery locations and reload behavior depend on the host; see the [official Codex Skill documentation](https://developers.openai.com/codex/skills/). Install dependencies in the Python environment the agent actually uses. To use this checkout's virtual environment, ask the agent to invoke `.venv/bin/python`.
+Discovery locations and reload behavior depend on the host; see the [official Codex Skill documentation](https://developers.openai.com/codex/skills/). Installed Skills do not carry the repository root, so always invoke the launcher by absolute path:
+
+```bash
+SKILL_DIR=~/.codex/skills/repo-evolution-research
+bash "$SKILL_DIR/rer" doctor --repo vllm-project/vllm
+```
+
+The launcher needs `uv` on `PATH`. It does not read dependencies from the caller's project, and it keeps the working directory you invoke it from. For enterprise mirrors, offline caches, `GH_TOKEN`, and the `RER_PYTHON` escape hatch, see [setup](skills/repo-evolution-research/references/setup.md).
 
 ### Understand the CLI flow
 
-Run these commands from the repository root. Start with a small window:
+Start from the user's project directory with a small window. Point `RER` at the checkout, or at `$SKILL_DIR/rer` for an installed Skill:
 
 ```bash
-python skills/repo-evolution-research/scripts/research.py init \
+RER=skills/repo-evolution-research/rer
+bash "$RER" init \
   --repo vllm-project/vllm --days 30 --mode quick \
   --timezone Asia/Shanghai --focus scheduling --focus 'KV cache'
 ```
@@ -95,23 +101,23 @@ Copy the actual path from `result.run` in the JSON output:
 
 ```bash
 RUN='.repo-research/github.com/vllm-project/vllm/<run_id>'
-python skills/repo-evolution-research/scripts/research.py collect --run "$RUN"
-python skills/repo-evolution-research/scripts/research.py prepare --run "$RUN"
+bash "$RER" collect --run "$RUN"
+bash "$RER" prepare --run "$RUN"
 ```
 
 The agent must now read `analysis/packs/*.md` and the candidate material. If needed, it writes `analysis/selection.json` using the [selection protocol](skills/repo-evolution-research/references/workflow.md#selection-协议), then runs:
 
 ```bash
-python skills/repo-evolution-research/scripts/research.py collect \
+bash "$RER" collect \
   --run "$RUN" --selection "$RUN/analysis/selection.json"
-python skills/repo-evolution-research/scripts/research.py prepare --run "$RUN"
+bash "$RER" prepare --run "$RUN"
 ```
 
 Once the agent has written `analysis/research.json`, run:
 
 ```bash
-python skills/repo-evolution-research/scripts/research.py validate --run "$RUN"
-python skills/repo-evolution-research/scripts/research.py render --run "$RUN"
+bash "$RER" validate --run "$RUN"
+bash "$RER" render --run "$RUN"
 ```
 
 The result is `$RUN/report.md`. Supporting files include `analysis/validation.json`, `analysis/evidence-review.md`, and `analysis/render-report.json`. Use `audit --run "$RUN"` for a read-only snapshot integrity diagnosis.
@@ -170,6 +176,7 @@ Research snapshots (`.repo-research/`), generated evaluation results (`evals/res
 
 ```bash
 python -m pip install 'jsonschema>=4.23,<5' 'pytest>=8' 'ruff>=0.6' 'PyYAML>=6'
+uv lock --script skills/repo-evolution-research/scripts/research.py --check
 python -m pytest -q
 python scripts/gen_assets.py --check
 PYTHON=python bash scripts/lint.sh

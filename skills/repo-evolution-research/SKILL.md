@@ -8,6 +8,12 @@ description: >-
   capabilities, or unresolved problems in an unfamiliar open-source project and
   needs auditable conclusions. Do not use for a plain PR list, a single-file or
   README summary, code search, or triage of one known issue.
+license: MIT
+compatibility: >-
+  Requires Python 3.11+ resolved through uv >= 0.9, and an authenticated GitHub
+  CLI (gh) with access to the target repository. macOS, Linux, or WSL only:
+  snapshot locking uses fcntl. First run needs access to a Python package index
+  unless the environment is pre-warmed.
 ---
 
 # Repository Evolution Research
@@ -53,16 +59,39 @@ the collection with web scraping or guesswork.
 Chinese, and window comparison is not implemented. Do not promise English output
 or a previous-window comparison.
 
+## Setup
+
+The Skill ships a launcher that resolves its own runtime. Set the absolute path
+once per session; never assume the repository layout inside the user's project.
+
+```bash
+SKILL_DIR=/absolute/path/to/repo-evolution-research
+bash "$SKILL_DIR/rer" --help
+```
+
+`rer` requires `uv >= 0.9` and an authenticated GitHub CLI. On first use it
+prepares the environment declared inside `scripts/research.py` (PEP 723 metadata
+plus `scripts/research.py.lock`) and reports progress on stderr. It keeps your
+current working directory, so snapshots land under `--output-root` in the user's
+project instead of inside the installed Skill.
+
+If `rer` exits 3 because the environment is missing, follow
+[`references/setup.md`](references/setup.md). Do not install packages into the
+host interpreter, and do not edit the Skill's declared dependencies to make an
+error disappear.
+
 ## Environment probe
 
 Run `doctor` first and read every check, not just the exit code.
 
 ```bash
-python skills/repo-evolution-research/scripts/research.py doctor --repo <REPO>
+bash "$SKILL_DIR/rer" doctor --repo <REPO>
 ```
 
 `doctor` exits 3 when a critical check fails: Python version, `jsonschema`,
 format checkers, `gh`, `gh_auth`, or `repo_access` when `--repo` is supplied.
+Bootstrap failures (missing `uv`, unsupported interpreter or platform, no
+prebuilt wheel) also exit 3, with `source: bootstrap` and a `recovery` line.
 Exit 3 is a hard stop: fix the environment or tell the user the run cannot
 start. A missing `git` is not critical; continue, but note that commit-ancestry
 checks are unavailable. `--no-discussions` / `--no-docs` reduce scope; they are
@@ -70,7 +99,9 @@ not an authentication workaround.
 
 ## Execution loop
 
-Run commands from any directory; the script locates its own package.
+Always invoke the launcher by absolute path. `rer` keeps the caller's working
+directory, so run it from the user's project or pass an absolute `--output-root`;
+never `cd` into the Skill directory, or snapshots will be written there.
 
 | Stage | Command | Reads | Writes | Stop condition |
 | --- | --- | --- | --- | --- |
@@ -94,21 +125,21 @@ Run commands from any directory; the script locates its own package.
 Compact form:
 
 ```bash
-python skills/repo-evolution-research/scripts/research.py init --repo <REPO> \
+bash "$SKILL_DIR/rer" init --repo <REPO> \
   --days 90 --mode standard --timezone Asia/Shanghai
-python skills/repo-evolution-research/scripts/research.py collect --run <RUN>
-python skills/repo-evolution-research/scripts/research.py prepare --run <RUN>
+bash "$SKILL_DIR/rer" collect --run <RUN>
+bash "$SKILL_DIR/rer" prepare --run <RUN>
 # read analysis/packs/*.md, then write analysis/selection.json
-python skills/repo-evolution-research/scripts/research.py collect \
+bash "$SKILL_DIR/rer" collect \
   --run <RUN> --selection <RUN>/analysis/selection.json
-python skills/repo-evolution-research/scripts/research.py prepare --run <RUN>
+bash "$SKILL_DIR/rer" prepare --run <RUN>
 # optional: import external evidence / verified_in_release proof
-python skills/repo-evolution-research/scripts/research.py import-source \
+bash "$SKILL_DIR/rer" import-source \
   --run <RUN> --input <ENVELOPE>
-python skills/repo-evolution-research/scripts/research.py prepare --run <RUN>
+bash "$SKILL_DIR/rer" prepare --run <RUN>
 # write analysis/research.json, then:
-python skills/repo-evolution-research/scripts/research.py validate --run <RUN>
-python skills/repo-evolution-research/scripts/research.py render --run <RUN>
+bash "$SKILL_DIR/rer" validate --run <RUN>
+bash "$SKILL_DIR/rer" render --run <RUN>
 ```
 
 At stage 4, choose by theme, not by filling every candidate. Every selection
@@ -194,11 +225,13 @@ front.
 | Entity IDs, evidence, relations, claim rules, status truth table, lifecycle state promotion | [`references/evidence-and-state.md`](references/evidence-and-state.md) |
 | `research.json` shape, report structure, validation gates, render/stale rules, quality rubric | [`references/report-and-evaluation.md`](references/report-and-evaluation.md) |
 | Budget fields, defaults, mode-derived values (generated) | [`references/configuration.md`](references/configuration.md) |
+| Environment bootstrap: uv, enterprise mirror, offline cache, authentication, lock regeneration | [`references/setup.md`](references/setup.md) |
 
 Rules of thumb: start with `workflow.md` when unsure; open `sources.md` only
 when a collection result needs explanation; open `evidence-and-state.md` when
 writing claims or capabilities; open `report-and-evaluation.md` before
-validating or rendering. Collector implementation notes live in the maintainer
+validating or rendering; open `setup.md` only when the environment itself is the
+problem. Collector implementation notes live in the maintainer
 repository under `docs/`; they are not installed with this skill.
 
 ## Safety

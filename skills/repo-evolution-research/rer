@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Launcher for the repo-evolution-research Skill.
+#
+# Resolves the runtime environment from the script's PEP 723 metadata via uv,
+# keeps the caller's working directory, and passes stdout, stderr and the CLI
+# exit code through unchanged. Bootstrap diagnostics go to stderr only.
+
+set -euo pipefail
+
+MINIMUM_UV_MAJOR=0
+MINIMUM_UV_MINOR=9
+
+SKILL_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+SCRIPT="${SKILL_DIR}/scripts/research.py"
+
+if [ ! -f "${SCRIPT}" ]; then
+  echo "rer: 找不到 ${SCRIPT}（Skill 安装不完整）" >&2
+  exit 3
+fi
+
+if [ -n "${RER_PYTHON:-}" ]; then
+  echo "rer: 使用 RER_PYTHON=${RER_PYTHON}；依赖未经过锁文件与 uv 校验" >&2
+  exec "${RER_PYTHON}" "${SCRIPT}" "$@"
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+  cat >&2 <<'MSG'
+rer: 需要 uv >= 0.9，但当前 PATH 中没有 uv。
+安装：curl -LsSf https://astral.sh/uv/install.sh | sh
+企业环境与离线准备见 references/setup.md。
+MSG
+  exit 3
+fi
+
+uv_version="$(uv --version 2>/dev/null | head -n 1 || true)"
+uv_numbers="$(printf '%s' "${uv_version}" | sed -n 's/^uv \([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p')"
+if [ -z "${uv_numbers}" ]; then
+  echo "rer: 无法识别 uv 版本：${uv_version:-<empty>}" >&2
+  exit 3
+fi
+
+uv_major="${uv_numbers%% *}"
+uv_minor="${uv_numbers##* }"
+if [ "${uv_major}" -lt "${MINIMUM_UV_MAJOR}" ] ||
+  { [ "${uv_major}" -eq "${MINIMUM_UV_MAJOR}" ] && [ "${uv_minor}" -lt "${MINIMUM_UV_MINOR}" ]; }; then
+  echo "rer: 需要 uv >= ${MINIMUM_UV_MAJOR}.${MINIMUM_UV_MINOR}，当前为 ${uv_version}" >&2
+  exit 3
+fi
+
+if ! uv run --locked --no-build --script "${SCRIPT}" --help >/dev/null; then
+  cat >&2 <<'MSG'
+rer: uv 无法准备运行环境。常见原因与处理：
+  - 内联依赖与锁文件不一致：在 Skill 目录执行 uv lock --script scripts/research.py
+  - 网络不可用：设置 UV_OFFLINE=1 并使用预热缓存，或配置企业 PyPI 镜像
+  - 平台或解释器没有预编译 wheel：改用受支持的 Python / 平台
+详见 references/setup.md。
+MSG
+  exit 3
+fi
+
+exec uv run --locked --no-build --script "${SCRIPT}" "$@"

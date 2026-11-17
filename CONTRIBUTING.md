@@ -31,8 +31,14 @@ Python 3.11 是最低版本。文件锁依赖 `fcntl`，支持 macOS / Linux；W
 python -m pytest -q
 python scripts/gen_assets.py --check
 PYTHON=python bash scripts/lint.sh
+uv lock --script skills/repo-evolution-research/scripts/research.py --check
 git diff --check
 ```
+
+Skill 运行时的依赖有两处声明：`pyproject.toml` 供开发与工具使用，`scripts/research.py`
+顶部的 PEP 723 内联元数据供 Skill 运行时使用；`tests/test_bootstrap.py` 断言两者一致。
+改动任一处的版本约束后，必须在 `scripts/` 目录执行 `uv lock --script research.py`
+重新生成并提交 `research.py.lock`，否则 `rer` 的 `--locked` 会在用户机器上失败。
 
 默认测试使用 fake transport 和本地 fixture，不需要 GitHub 认证、模型 API 密钥或已有研究快照。采集真实仓库不是每个 PR 的必需步骤；需要网络验证时记录提交、环境、窗口、覆盖和局限，不把历史 run 的结果写成当前版本已验证。
 
