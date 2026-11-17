@@ -4,6 +4,9 @@
 
 ### 改进
 
+- 新增 `tests/test_install_boundary.py` 安装边界验收：只复制 Skill 目录到含空格与中文的路径，将安装目录设为只读，从无关的项目目录运行 `doctor`、`init`、`audit`，并逐文件比对安装目录在运行前后一致；同时覆盖 uv 缺失时的可操作错误。默认以 `RER_PYTHON` 执行，`RER_TEST_REAL_UV=1` 时走真实 uv 与锁文件。
+- CI 的 `lockfile` job 改名 `install-boundary`，在锁新鲜度检查之外，用真实 uv 执行一次复制安装验收。
+- 启动器的失败路径改用 shell 内建（`printf`、参数展开）完成路径解析、版本解析和错误输出，在没有 `dirname`、`sed`、`head`、`cat` 的最小环境中也能给出可操作错误；依赖检测仍只要求 `bash` 与 `uv`。
 - `doctor` 结果新增 `runtime` 环境溯源：启动方式（`direct` / `uv-locked` / `python-override`）、解释器路径与版本、平台、uv 路径与版本、`offline` 和 `UV_CACHE_DIR`；text 模式追加同名 `runtime:` 行。`rer` 通过 `RER_LAUNCHER` 标记实际入口，`dependencies_locked` 只表示是否走 `--locked` 路径。
 - 版本号以 `rer/__init__.py` 的 `TOOL_VERSION` 为运行时唯一来源；新增 `tests/test_version_sources.py` 校验 `pyproject.toml`、中英文 README 和 `references/workflow.md` 一致，并移除 `tests/test_schemas.py` 中的重复硬编码。
 - 新增 Skill 目录下的 `rer` 启动器：依据 `scripts/research.py` 的 PEP 723 内联元数据与相邻的 `research.py.lock`，通过 `uv run --locked --no-build --script` 准备隔离运行环境；保留调用者工作目录，stdout、stderr 与退出码原样透传。uv 缺失、版本低于 0.9 或环境准备失败时以 exit 3 报告原因与恢复方式。
@@ -15,6 +18,7 @@
 
 ### 验证
 
+- 2026-11-17，macOS arm64 / Python 3.13.3：`pytest -q` 1065 passed；`RER_TEST_REAL_UV=1 pytest tests/test_install_boundary.py` 在真实 uv 0.9.18 下通过，只读安装目录在 `doctor`、`init`、`audit` 前后逐文件一致。lint、生成资产与 `git diff --check` 通过。未在 Linux 上执行；CI job 定义不等于已观测通过。
 - 2026-11-17，macOS arm64 / Python 3.13.3：`pytest -q` 1063 passed；lint、生成资产与`git diff --check` 通过。经 `rer` 运行时 doctor 的 `runtime` 显示 `launcher=uv-locked`、uv 缓存解释器与 uv 0.9.18；直接以 `.venv/bin/python` 运行时显示 `launcher=direct`。未在 Linux 验证。
 - 2026-11-17，macOS arm64 / Python 3.13.3：`pytest -q` 1059 passed（新增 7 个 bootstrap 用例）；`scripts/gen_assets.py --check`、lint 与 `git diff --check` 通过；uv 0.9.18 下 `uv lock --script ... --check` 通过。启动器在临时目录及 `RER_PYTHON` 入口运行 `--help` 均成功，`/usr/bin/python3`（3.9.6）直接运行脚本返回 exit 3 与结构化 bootstrap 错误。本轮未验证 Linux/Windows，也未运行新的真实 GitHub 采集。
 - 2026-11-14，macOS arm64 / Python 3.13.3：公开 `vllm-project/router` 14 天窗口真实采集、强制重采和 selection 深读均无阻塞 coverage；最终 104 次请求、10,902,865 字节、4 个深读实体。最终 audit 核验 1,535 条引文、109 条关系、419 个文本 blob，通过。详见 [`real workflow acceptance`](docs/acceptance/2026-11-14-real-workflow.md)。
@@ -45,6 +49,7 @@
 
 ### 开发检查
 
+- 安装边界用例将只读安装目录、路径含空格/中文、`__pycache__` 抑制和安装目录零写入合并为一个可重复场景；CI 在真实 uv 下复跑。
 - 新增 doctor 环境溯源用例，覆盖 `uv-locked`/`direct` 两种启动方式、uv 缺失和 `offline` 标记；新增版本来源一致性用例。
 - 新增 `tests/test_bootstrap.py`：断言 PEP 723 内联元数据与 `pyproject.toml` 的 `requires-python`/`dependencies` 一致、`research.py.lock` 存在且覆盖声明的依赖、启动器可从任意目录运行并透传退出码，以及旧解释器返回结构化 `environment_error`。
 - CI 新增 `lockfile` job，使用 `uv>=0.9,<0.10` 执行 `uv lock --script ... --check`，防止内联依赖改动后漏提交锁文件。

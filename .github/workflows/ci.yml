@@ -53,16 +53,20 @@ jobs:
       - name: Check whitespace
         run: git diff --check
 
-  lockfile:
-    name: Script lockfile
+  install-boundary:
+    name: Install boundary
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install pinned uv
-        run: python -m pip install 'uv>=0.9,<0.10'
+      - name: Install pinned uv and pytest
+        run: python -m pip install 'uv>=0.9,<0.10' 'pytest>=8'
       - name: Assert research.py.lock is current
         run: uv lock --script skills/repo-evolution-research/scripts/research.py --check
+      - name: Copy-only install with real uv and a read-only Skill directory
+        env:
+          RER_TEST_REAL_UV: '1'
+        run: python -m pytest tests/test_install_boundary.py -q

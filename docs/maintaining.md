@@ -73,7 +73,7 @@ python scripts/benchmark_packs.py --baseline-file /path/to/trusted/baseline/pack
 
 `rer` 以 `uv run --locked --no-build --script` 执行，因此锁文件缺失或过期会立即失败，而不是静默解析新版本。`--no-build` 拒绝现场源码构建，避免在缺少 wheel 的平台触发本地编译。改动依赖时同时更新 `pyproject.toml` 与内联元数据，再重新生成锁；`tests/test_bootstrap.py` 断言两处一致，CI 的 `lockfile` job 校验锁是否最新。
 
-启动器保持调用者工作目录，不读取调用方项目的依赖，也不在 Skill 目录内写环境。排障与离线/企业配置见 [`references/setup.md`](../skills/repo-evolution-research/references/setup.md)。修改启动器后，用干净目录和 `RER_PYTHON` 两种入口各跑一次 `--help`，并确认旧解释器返回 exit 3 的结构化 `environment_error`。
+启动器保持调用者工作目录，不读取调用方项目的依赖，也不在 Skill 目录内写环境。安装边界由 `tests/test_install_boundary.py` 覆盖：只复制 Skill 目录、把安装目录设为只读、项目路径含空格与中文，然后运行 `doctor`、`init`、`audit`，并比对安装目录在运行前后完全一致；uv 缺失时要求给出可操作错误。默认用 `RER_PYTHON` 跑，设置 `RER_TEST_REAL_UV=1` 时走真实 uv。CI 的 `install-boundary` job 使用真实 uv 执行一次，并校验锁文件最新。排障与离线/企业配置见 [`references/setup.md`](../skills/repo-evolution-research/references/setup.md)。
 
 ## 版本与发布
 
