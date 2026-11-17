@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.9 - 2026-11-17
 
 ### 改进
 
@@ -65,8 +65,6 @@
 - 2026-11-13，基于 `0a1dd41` 的工作区改动，本机 macOS / Python 3.13.3：`pytest -q` 944 passed（基线 917）；生成资产一致性、lint（含 Ruff）和 `git diff --check` 通过。
 - 新增 27 个回归与边界用例，覆盖响应正文保留、分页循环/限额/partial data、Discussion 回复完整性与存储索引失效。完整离线工作流仍通过；本轮未运行新的真实 GitHub 采集或 Linux 验证。
 - 同日继续整体优化，在上述 944 测试工作区上新增 48 个回归与边界用例；最终 `pytest -q` 为 992 passed（18.65 秒），生成资产一致性、扩展后的 lint 和 `git diff --check` 均通过。新增覆盖 RFC 6901、畸形 URI/UTF-8、只读 blob、损坏快照审计、REST section 缺口、GraphQL 内容保留以及哈希契约/同大小篡改；验证环境仍为本机 macOS / Python 3.13.3。
-
-## 0.2.9 - 2026-11-08
 
 ### 新增
 
